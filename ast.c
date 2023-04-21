@@ -19,9 +19,10 @@ enum TokenKind { // <-- This should belong to the lexer
 };
 
 enum ASTKind {
-    A_BINARY = 0,
-    A_UNARY,
     A_NUMBER,
+    A_BINARY,
+    A_UNARY,
+    A_TERNARY,
 };
 
 // Sum type
@@ -37,6 +38,11 @@ struct ASTExpr {
             enum TokenKind kind;
             struct ASTExpr *exp;
         } unary;
+        struct {
+            struct ASTExpr *cond;
+            struct ASTExpr *if_true;
+            struct ASTExpr *if_false;
+        } ternary;
         int64_t number;
     } as;
 };
@@ -44,12 +50,14 @@ struct ASTExpr {
 const char *expr2str(enum ASTKind kind)
 {
     switch (kind) {
+    case A_NUMBER:
+        return "<AST_NUMBER>";
     case A_BINARY:
         return "<AST_BINARY>";
     case A_UNARY:
         return "<AST_UNARY>";
-    case A_NUMBER:
-        return "<AST_NUMBER>";
+    case A_TERNARY:
+        return "<AST_TERNARY>";
     default:
         return "<AST_UNKNOWN>";
     }
@@ -93,6 +101,18 @@ struct ASTExpr *expr_unary(enum TokenKind kind, struct ASTExpr *exp)
     return expr;
 }
 
+struct ASTExpr *expr_ternary(struct ASTExpr *cond,
+                             struct ASTExpr *if_true, struct ASTExpr *if_false)
+{
+    struct ASTExpr *expr = expr_new(A_TERNARY);
+    if (expr != NULL) {
+        expr->as.ternary.cond = cond;
+        expr->as.ternary.if_true = if_true;
+        expr->as.ternary.if_false = if_false;
+    }
+    return expr;
+}
+
 void expr_free(struct ASTExpr *expr)
 {
     if (expr == NULL)
@@ -105,6 +125,11 @@ void expr_free(struct ASTExpr *expr)
         break;
     case A_UNARY:
         expr_free(expr->as.unary.exp);
+        break;
+    case A_TERNARY:
+        expr_free(expr->as.ternary.cond);
+        expr_free(expr->as.ternary.if_true);
+        expr_free(expr->as.ternary.if_false);
         break;
     default:
         break;
@@ -154,6 +179,14 @@ static int64_t expr_unary_eval(struct ASTExpr *exp)
     }
 }
 
+static int64_t expr_ternary_eval(struct ASTExpr *exp)
+{
+    int64_t cond = expr_eval(exp->as.ternary.cond);
+    if (cond != 0)
+        return expr_eval(exp->as.ternary.if_true);
+    return expr_eval(exp->as.ternary.if_false);
+}
+
 int64_t expr_eval(struct ASTExpr *exp)
 {
     if (exp == NULL)
@@ -166,6 +199,8 @@ int64_t expr_eval(struct ASTExpr *exp)
         return expr_binary_eval(exp);
     case A_UNARY:
         return expr_unary_eval(exp);
+    case A_TERNARY:
+        return expr_ternary_eval(exp);
     default:
         printf("%s is not an expression\n", expr2str(exp->kind));
         exit(1);
@@ -175,8 +210,10 @@ int64_t expr_eval(struct ASTExpr *exp)
 int main(void)
 {
     struct ASTExpr *exp;
+    const char *input;
     int rc = 1;
 
+#if 0
     // ~-1 + 2 * (3 % 2)
     exp = expr_binary(T_PLUS,
                       expr_unary(T_TILDE, expr_unary(T_MINUS, expr_number(1))),
@@ -185,8 +222,17 @@ int main(void)
                                   expr_binary(T_PERCENT,
                                               expr_number(3),
                                               expr_number(2))));
+    input = "~-1 + 2 * (3 %% 2)";
+#else
+    // 1 + 2 ? 9 + 10 : -2
+    exp = expr_ternary(expr_binary(T_PLUS, expr_number(1), expr_number(2)), // cond
+            expr_binary(T_PLUS, expr_number(9), expr_number(10)), // if_true
+            expr_unary(T_MINUS, expr_number(2)) // if_false
+            );
+    input = "1 + 2 ? 9 + 10 : -2";
+#endif
     if (exp != NULL) {
-        printf("input  = ~-1 + 2 * (3 %% 2)\n");
+        printf("input  = %s\n", input);
         int64_t result = expr_eval(exp);
         printf("output = %ld\n", result);
         expr_free(exp);
