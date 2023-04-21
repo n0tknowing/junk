@@ -172,6 +172,156 @@ int64_t expr_eval(struct ASTExpr *exp)
     }
 }
 
+// Constant folding.
+//
+// In each expr_*_fold() function, the function may recursively call
+// expr_fold() to rewrite the AST node if the node is nested.
+void expr_fold(struct ASTExpr *exp);
+
+static void expr_binary_fold(struct ASTExpr *exp)
+{
+    if (exp == NULL)
+        return;
+
+    struct ASTExpr *lhs = exp->as.binary.lhs;
+    if (lhs->kind == A_UNARY) // try fold this unary operator
+        expr_fold(lhs);
+    else if (lhs->kind == A_BINARY) // nested binary operators
+        expr_fold(lhs);
+
+    if (lhs->kind != A_NUMBER) // not a constant?
+        return;
+
+    struct ASTExpr *rhs = exp->as.binary.rhs;
+    if (rhs->kind == A_UNARY) // try fold this unary operator
+        expr_fold(rhs);
+    else if (rhs->kind == A_BINARY) // nested binary operators
+        expr_fold(rhs);
+
+    if (rhs->kind != A_NUMBER) // not a constant?
+        return;
+
+    exp->kind = A_NUMBER;
+    exp->as.number = expr_binary_eval(exp);
+
+    free(rhs);
+    free(lhs);
+}
+
+static void expr_unary_fold(struct ASTExpr *exp)
+{
+    if (exp == NULL)
+        return;
+
+    struct ASTExpr *uexpr = exp->as.unary.exp;
+    if (uexpr->kind == A_UNARY) // check for nested unary operators
+        expr_fold(uexpr);
+    else if (uexpr->kind == A_BINARY) // -(1 + 2) is unary with binary...
+        expr_fold(uexpr);             // ...operator as its operand
+
+    if (uexpr->kind != A_NUMBER) // not a constant?
+        return;
+
+    exp->kind = A_NUMBER;
+    exp->as.number = expr_unary_eval(exp);
+
+    free(uexpr);
+}
+
+void expr_fold(struct ASTExpr *exp)
+{
+    if (exp == NULL)
+        return;
+
+    switch (exp->kind) {
+    case A_BINARY:
+        expr_binary_fold(exp);
+        break;
+    case A_UNARY:
+        expr_unary_fold(exp);
+        break;
+    default:
+        break;
+    }
+}
+
+static int gv_helper(struct ASTExpr *exp, int parent, int id)
+{
+    if (exp == NULL)
+        return id;
+
+    int node_id = id++;
+    char data[256] = {0};
+
+    switch (exp->kind) {
+    case A_NUMBER:
+        snprintf(data, sizeof(data), "%ld", exp->as.number);
+        break;
+    case A_BINARY:
+        switch (exp->as.binary.kind) {
+        case T_PLUS:
+            data[0] = '+';
+            break;
+        case T_MINUS:
+            data[0] = '-';
+            break;
+        case T_STAR:
+            data[0] = '*';
+            break;
+        case T_SLASH:
+            data[0] = '/';
+            break;
+        case T_PERCENT:
+            data[0] = '%';
+            break;
+        default:
+            snprintf(data, sizeof(data), "???");
+            break;
+        }
+        break;
+    case A_UNARY:
+        switch (exp->as.unary.kind) {
+        case T_PLUS:
+            data[0] = '+';
+            break;
+        case T_MINUS:
+            data[0] = '-';
+            break;
+        case T_TILDE:
+            data[0] = '~';
+            break;
+        default:
+            snprintf(data, sizeof(data), "???");
+            break;
+        }
+        break;
+    default:
+        snprintf(data, sizeof(data), "???");
+        break;
+    }
+
+    printf("    node%d [label=\"%s\"];\n", node_id, data);
+    if (parent >= 0)
+        printf("    node%d -- node%d\n", parent, node_id);
+
+    if (exp->kind == A_BINARY) {
+        id = gv_helper(exp->as.binary.lhs, node_id, id);
+        return gv_helper(exp->as.binary.rhs, node_id, id);
+    } else if (exp->kind == A_UNARY) {
+        return gv_helper(exp->as.unary.exp, node_id, id);
+    } else {
+        return id;
+    }
+}
+
+int expr_draw(struct ASTExpr *exp)
+{
+    printf("graph ast {\n");
+    int rc = gv_helper(exp, -1, 0);
+    printf("}\n");
+    return rc;
+}
+
 int main(void)
 {
     struct ASTExpr *exp;
@@ -186,9 +336,11 @@ int main(void)
                                               expr_number(3),
                                               expr_number(2))));
     if (exp != NULL) {
+        expr_fold(exp);
         printf("input  = ~-1 + 2 * (3 %% 2)\n");
         int64_t result = expr_eval(exp);
         printf("output = %ld\n", result);
+        expr_draw(exp);
         expr_free(exp);
         rc = 0;
     }
