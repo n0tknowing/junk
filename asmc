@@ -1,0 +1,5 @@
+#!/usr/bin/bash
+
+FILE_="$1"
+FILE="${FILE_%.*}"
+nasm -f elf64 "$FILE_" && ld "$FILE.o" && rm "$FILE.o"

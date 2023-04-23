@@ -1,5 +1,4 @@
-// https://en.wikipedia.org/wiki/Sethi%E2%80%93Ullman_algorithm
-// ^-- codegen for arithmetic expression
+// AST -> Bytecode version
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,27 +17,11 @@ enum TokenKind { // <-- This should belong to the lexer
     T_INVALID = 512,
 };
 
-struct Identifier {
-    const char *name;
-    size_t length;
-};
-
-struct Identifier *identifier(const char *name, size_t len)
-{
-    struct Identifier *id = (struct Identifier *)calloc(1, sizeof(*id));
-    if (id != NULL) {
-        id->name = name; // dup?
-        id->length = len;
-    }
-    return id;
-}
-
 enum ASTKind {
     A_NUMBER,
     A_BINARY,
     A_UNARY,
     A_TERNARY,
-    A_ASSIGN,
 };
 
 // Sum type
@@ -59,10 +42,6 @@ struct ASTExpr {
             struct ASTExpr *if_true;
             struct ASTExpr *if_false;
         } ternary;
-        struct {
-            struct Identifier *lval;
-            struct ASTExpr *rval;
-        } assign;
         int64_t number;
     } as;
 };
@@ -78,8 +57,6 @@ const char *expr2str(enum ASTKind kind)
         return "<AST_UNARY>";
     case A_TERNARY:
         return "<AST_TERNARY>";
-    case A_ASSIGN:
-        return "<AST_ASSIGN>";
     default:
         return "<AST_UNKNOWN>";
     }
@@ -87,7 +64,7 @@ const char *expr2str(enum ASTKind kind)
 
 static struct ASTExpr *expr_new(enum ASTKind kind)
 {
-    struct ASTExpr *expr = (struct ASTExpr *)calloc(1, sizeof(*expr));
+    struct ASTExpr *expr = calloc(1, sizeof(*expr));
     if (expr != NULL)
         expr->kind = kind;
     return expr;
@@ -135,16 +112,6 @@ struct ASTExpr *expr_ternary(struct ASTExpr *cond,
     return expr;
 }
 
-struct ASTExpr *expr_assign(struct Identifier *lval, struct ASTExpr *rval)
-{
-    struct ASTExpr *expr = expr_new(A_ASSIGN);
-    if (expr != NULL) {
-        expr->as.assign.lval = lval;
-        expr->as.assign.rval = rval;
-    }
-    return expr;
-}
-
 void expr_free(struct ASTExpr *expr)
 {
     if (expr == NULL)
@@ -163,10 +130,6 @@ void expr_free(struct ASTExpr *expr)
         expr_free(expr->as.ternary.if_true);
         expr_free(expr->as.ternary.if_false);
         break;
-    case A_ASSIGN:
-        expr_free(expr->as.assign.rval);
-        free(expr->as.assign.lval);
-        break;
     default:
         break;
     }
@@ -174,80 +137,93 @@ void expr_free(struct ASTExpr *expr)
     free(expr);
 }
 
-int64_t expr_eval(struct ASTExpr *exp);
+static void expr_emit_body(struct ASTExpr *exp);
 
-static int64_t expr_binary_eval(struct ASTExpr *exp)
+static void expr_binary_emit(struct ASTExpr *exp)
 {
-    int64_t lhs = expr_eval(exp->as.binary.lhs);
-    int64_t rhs = expr_eval(exp->as.binary.rhs);
+    expr_emit_body(exp->as.binary.lhs);
+    expr_emit_body(exp->as.binary.rhs);
 
     switch (exp->as.binary.kind) {
     case T_PLUS:
-        return lhs + rhs;
+        printf("  ADD\n");
+        break;
     case T_MINUS:
-        return lhs - rhs;
+        printf("  SUB\n");
+        break;
     case T_STAR:
-        return lhs * rhs;
+        printf("  MUL\n");
+        break;
     case T_SLASH:
-        return lhs / rhs;
+        printf("  DIV\n");
+        break;
     case T_PERCENT:
-        return lhs % rhs;
+        printf("  MOD\n");
+        break;
     default:
         printf("Invalid binary operator\n");
         exit(1);
     }
 }
 
-static int64_t expr_unary_eval(struct ASTExpr *exp)
+static void expr_unary_emit(struct ASTExpr *exp)
 {
-    int64_t v = expr_eval(exp->as.unary.exp);
+    expr_emit_body(exp->as.unary.exp);
 
     switch (exp->as.unary.kind) {
     case T_PLUS:
-        return 0 + v;
+        break;
     case T_MINUS:
-        return 0 - v;
+        printf("  NEG\n");
+        break;
     case T_TILDE:
-        return ~v;
+        printf("  BNOT\n");
+        break;
     default:
         printf("Invalid unary operator\n");
         exit(1);
     }
 }
 
-static int64_t expr_ternary_eval(struct ASTExpr *exp)
+static void expr_ternary_emit(struct ASTExpr *exp)
 {
-    int64_t cond = expr_eval(exp->as.ternary.cond);
-    if (cond != 0)
-        return expr_eval(exp->as.ternary.if_true);
-    return expr_eval(exp->as.ternary.if_false);
+    expr_emit_body(exp->as.ternary.cond);
+    printf("  JUMP_IF_ZERO A0\n");
+    expr_emit_body(exp->as.ternary.if_true);
+    printf("  JUMP A1\n");
+    printf(" A0:\n");
+    expr_emit_body(exp->as.ternary.if_false);
+    printf(" A1:\n");
 }
 
-static int64_t expr_assign_eval(struct ASTExpr *exp)
-{
-   return expr_eval(exp->as.assign.rval);
-}
-
-int64_t expr_eval(struct ASTExpr *exp)
+static void expr_emit_body(struct ASTExpr *exp)
 {
     if (exp == NULL)
-        return INT64_MIN;
+        return;
 
     switch (exp->kind) {
     case A_NUMBER:
-        return exp->as.number;
+        printf("  PUSH %ld\n", exp->as.number);
+        break;
     case A_BINARY:
-        return expr_binary_eval(exp);
+        expr_binary_emit(exp);
+        break;
     case A_UNARY:
-        return expr_unary_eval(exp);
+        expr_unary_emit(exp);
+        break;
     case A_TERNARY:
-        return expr_ternary_eval(exp);
-    case A_ASSIGN:
-        return expr_assign_eval(exp);
+        expr_ternary_emit(exp);
+        break;
     default:
         printf("%s is not an expression\n", expr2str(exp->kind));
         exit(1);
     }
+}
+
+void expr_emit(struct ASTExpr *exp)
+{
+    expr_emit_body(exp);
+    printf("  HALT\n");
 }
 
 int main(void)
@@ -267,31 +243,17 @@ int main(void)
                                               expr_number(2))));
     input = "~-1 + 2 * (3 %% 2)";
 #else
-    struct ASTExpr *exp2;
-    const char *input2;
-    // x = 1 + 2 ? 9 + 10 : -2
-    exp = expr_assign(identifier("x", 1),
-            expr_ternary(expr_binary(T_PLUS, expr_number(1), expr_number(2)), // cond
+    // 1 + 2 ? 9 + 10 : -2
+    exp = expr_ternary(expr_binary(T_PLUS, expr_number(1), expr_number(2)), // cond
             expr_binary(T_PLUS, expr_number(9), expr_number(10)), // if_true
             expr_unary(T_MINUS, expr_number(2)) // if_false
-            ));
-    input = "x = 1 + 2 ? 9 + 10 : -2";
+            );
+    input = "1 + 2 ? 9 + 10 : -2";
 #endif
     if (exp != NULL) {
-        // y = x + 2 * 8
-        exp2 = expr_binary(T_PLUS, exp,
-                expr_binary(T_STAR, expr_number(2), expr_number(8)));
-        if (exp2 == NULL) {
-            printf(":-(\n");
-            expr_free(exp);
-            return 1;
-        }
-        input2 = "y = x + 2 * 8";
-        printf("input  = %s\n", input);
-        printf("input2 = %s\n", input2);
-        int64_t result = expr_eval(exp2);
-        printf("output = %ld\n", result);
-        expr_free(exp2);
+        printf("input    = %s\n", input);
+        printf("bytecode = \n");
+        expr_emit(exp);
         expr_free(exp);
         rc = 0;
     }
