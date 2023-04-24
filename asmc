@@ -1,5 +1,9 @@
 #!/usr/bin/bash
 
+if [ $# -eq 0 ]; then
+    echo "asmc: No input file supplied"
+    exit 1
+fi
 FILE_="$1"
 FILE="${FILE_%.*}"
 nasm -f elf64 "$FILE_" && ld "$FILE.o" && rm "$FILE.o"
