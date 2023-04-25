@@ -1,3 +1,18 @@
+//  Operator          Associativity       Description
+//  --------          -------------       -----------
+//  +x -x ~x not x    right to left       Positive, negative, bitwise NOT,
+//                                        logical NOT
+//  * / %             left to right       Multiplication, division, modulo
+//  + -               left to right       Addition, subtraction
+//  << >>             left to right       Bitwise shifts
+//  &                 left to right       Bitwise AND
+//  ^                 left to right       Bitwise XOR
+//  |                 left to right       Bitwise OR
+//  == != < > <= >=   left to right       Relational operators
+//  and               left to right       Logical AND
+//  or                left to right       Logical OR
+
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -12,7 +27,7 @@
 typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
     tok_star, tok_slash, tok_percent, tok_question, tok_colon, tok_bitand,
-    tok_bitxor, tok_bitor, tok_bitnot,
+    tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor, tok_lognot,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -35,6 +50,24 @@ void lexer_next(lexer_t *l)
     intptr_t off = 1;
 
     switch (*l->cur) {
+    case 'a':
+        if (strncmp(l->cur, "and", 3) == 0) {
+            off = 3;
+            l->kind = tok_logand;
+        }
+        break;
+    case 'n':
+        if (strncmp(l->cur, "not", 3) == 0) {
+            off = 3;
+            l->kind = tok_lognot;
+        }
+        break;
+    case 'o':
+        if (strncmp(l->cur, "or", 2) == 0) {
+            off = 2;
+            l->kind = tok_logor;
+        }
+        break;
     case '0': case '1': case '2': case '3': case '4':
     case '5': case '6': case '7': case '8': case '9':
         l->kind = tok_number;
@@ -200,6 +233,8 @@ static int64_t expr_unary_eval(expr_t *E)
         return 0 - opr_v;
     case tok_bitnot:
         return ~opr_v;
+    case tok_lognot:
+        return !opr_v;
     default:
         fprintf(stderr, "invalid unary operator\n");
         exit(1);
@@ -236,6 +271,10 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs ^ rhs;
     case tok_bitor:
         return lhs | rhs;
+    case tok_logand:
+        return lhs && rhs;
+    case tok_logor:
+        return lhs || rhs;
     default:
         fprintf(stderr, "invalid binary operator\n");
         exit(1);
@@ -283,6 +322,10 @@ expr_bp bp_lookup(token_kind_t tok)
     switch (tok) {
     case tok_question:
         return bp_right_assoc(20);
+    case tok_logor:
+        return bp_left_assoc(30);
+    case tok_logand:
+        return bp_left_assoc(40);
     case tok_bitor:
         return bp_left_assoc(60);
     case tok_bitxor:
@@ -421,6 +464,7 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
     case tok_plus:
     case tok_minus:
     case tok_bitnot:
+    case tok_lognot:
         E = expr_parse_unary(l);
         break;
     default:
