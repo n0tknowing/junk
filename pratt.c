@@ -12,7 +12,7 @@
 typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
     tok_star, tok_slash, tok_percent, tok_question, tok_colon, tok_bitand,
-    tok_bitxor, tok_bitor,
+    tok_bitxor, tok_bitor, tok_bitnot,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -75,6 +75,9 @@ void lexer_next(lexer_t *l)
         break;
     case '|':
         l->kind = tok_bitor;
+        break;
+    case '~':
+        l->kind = tok_bitnot;
         break;
     default:
         l->kind = tok_unknown;
@@ -195,6 +198,8 @@ static int64_t expr_unary_eval(expr_t *E)
         return 0 + opr_v;
     case tok_minus:
         return 0 - opr_v;
+    case tok_bitnot:
+        return ~opr_v;
     default:
         fprintf(stderr, "invalid unary operator\n");
         exit(1);
@@ -415,6 +420,7 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
         break;
     case tok_plus:
     case tok_minus:
+    case tok_bitnot:
         E = expr_parse_unary(l);
         break;
     default:
