@@ -11,7 +11,8 @@
 
 typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
-    tok_star, tok_slash, tok_percent, tok_question, tok_colon,
+    tok_star, tok_slash, tok_percent, tok_question, tok_colon, tok_bitand,
+    tok_bitxor, tok_bitor,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -65,6 +66,15 @@ void lexer_next(lexer_t *l)
         break;
     case ':':
         l->kind = tok_colon;
+        break;
+    case '&':
+        l->kind = tok_bitand;
+        break;
+    case '^':
+        l->kind = tok_bitxor;
+        break;
+    case '|':
+        l->kind = tok_bitor;
         break;
     default:
         l->kind = tok_unknown;
@@ -215,6 +225,12 @@ static int64_t expr_binary_eval(expr_t *E)
             exit(1);
         }
         return lhs % rhs;
+    case tok_bitand:
+        return lhs & rhs;
+    case tok_bitxor:
+        return lhs ^ rhs;
+    case tok_bitor:
+        return lhs | rhs;
     default:
         fprintf(stderr, "invalid binary operator\n");
         exit(1);
@@ -262,6 +278,12 @@ expr_bp bp_lookup(token_kind_t tok)
     switch (tok) {
     case tok_question:
         return bp_right_assoc(20);
+    case tok_bitor:
+        return bp_left_assoc(60);
+    case tok_bitxor:
+        return bp_left_assoc(70);
+    case tok_bitand:
+        return bp_left_assoc(80);
     case tok_plus:
     case tok_minus:
         return bp_left_assoc(100);
