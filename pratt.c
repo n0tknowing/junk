@@ -11,8 +11,8 @@
 
 typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
-    tok_star, tok_slash, tok_percent,
-    tok_unknown,
+    tok_star, tok_slash, tok_percent, tok_question, tok_colon,
+    tok_unknown = 256,
 } token_kind_t;
 
 typedef struct {
@@ -60,6 +60,12 @@ void lexer_next(lexer_t *l)
     case '%':
         l->kind = tok_percent;
         break;
+    case '?':
+        l->kind = tok_question;
+        break;
+    case ':':
+        l->kind = tok_colon;
+        break;
     default:
         l->kind = tok_unknown;
         break;
@@ -74,7 +80,7 @@ void lexer_next(lexer_t *l)
 typedef struct expr_t expr_t;
 
 typedef enum {
-    constant_kind, unary_kind, binary_kind,
+    constant_kind, unary_kind, binary_kind, ternary_kind,
 } expr_kind_t;
 
 struct expr_t {
@@ -89,6 +95,11 @@ struct expr_t {
             expr_t *lhs;
             expr_t *rhs;
         } binary;
+        struct {
+            expr_t *cond;
+            expr_t *vit; // value if true (non-zero)
+            expr_t *vif; // value if false
+        } ternary;
         int64_t constant;
     };
 };
@@ -125,6 +136,15 @@ expr_t *expr_binary(token_kind_t kind, expr_t *lhs, expr_t *rhs)
     return E;
 }
 
+expr_t *expr_ternary(expr_t *cond, expr_t *vit, expr_t *vif)
+{
+    expr_t *E = expr_new(ternary_kind);
+    E->ternary.cond = cond;
+    E->ternary.vit = vit;
+    E->ternary.vif = vif;
+    return E;
+}
+
 void expr_free(expr_t *E)
 {
     if (E == NULL) return;
@@ -138,6 +158,11 @@ void expr_free(expr_t *E)
     case binary_kind:
         expr_free(E->binary.lhs);
         expr_free(E->binary.rhs);
+        break;
+    case ternary_kind:
+        expr_free(E->ternary.cond);
+        expr_free(E->ternary.vit);
+        expr_free(E->ternary.vif);
         break;
     default:
         break;
@@ -196,6 +221,13 @@ static int64_t expr_binary_eval(expr_t *E)
     }
 }
 
+static int64_t expr_ternary_eval(expr_t *E)
+{
+    int64_t cond = expr_eval(E->ternary.cond);
+    if (cond != 0) return expr_eval(E->ternary.vit);
+    return expr_eval(E->ternary.vif);
+}
+
 int64_t expr_eval(expr_t *E)
 {
     if (E == NULL) abort();
@@ -207,6 +239,8 @@ int64_t expr_eval(expr_t *E)
         return expr_unary_eval(E);
     case binary_kind:
         return expr_binary_eval(E);
+    case ternary_kind:
+        return expr_ternary_eval(E);
     default:
         abort();
     }
@@ -226,6 +260,8 @@ typedef struct {
 expr_bp bp_lookup(token_kind_t tok)
 {
     switch (tok) {
+    case tok_question:
+        return bp_right_assoc(20);
     case tok_plus:
     case tok_minus:
         return bp_left_assoc(100);
@@ -316,6 +352,33 @@ expr_t *expr_parse_unary(lexer_t *l)
     return expr_unary(kind, operand);
 }
 
+expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
+{
+    lexer_next(l);
+
+    expr_t *vit = expr_parse(l, 0);
+    if (vit == NULL) {
+        fprintf(stderr, "missing second operand while parsing ternary "
+                        "conditional expression\n");
+        exit(1);
+    } else if (l->kind != tok_colon) {
+        fprintf(stderr, "missing ':' while parsing second operand of ternary "
+                        "conditional expression\n");
+        exit(1);
+    }
+
+    lexer_next(l);
+
+    expr_t *vif = expr_parse(l, 0);
+    if (vif == NULL) {
+        fprintf(stderr, "missing third operand while parsing ternary "
+                        "conditional expression\n");
+        exit(1);
+    }
+
+    return expr_ternary(cond, vit, vif);
+}
+
 expr_t *expr_parse(lexer_t *l, int min_bp)
 {
     expr_t *E = NULL;
@@ -342,7 +405,10 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
     expr_bp bp = bp_lookup(l->kind);
 
     while (min_bp < bp.left) {
-        E = expr_parse_binary(l, E, bp.right);
+        if (l->kind == tok_question)
+            E = expr_parse_ternary(l, E);
+        else
+            E = expr_parse_binary(l, E, bp.right);
         bp = bp_lookup(l->kind);
     }
 
