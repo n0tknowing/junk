@@ -28,6 +28,7 @@ typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
     tok_star, tok_slash, tok_percent, tok_question, tok_colon, tok_bitand,
     tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor, tok_lognot,
+    tok_lshift, tok_rshift,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -39,7 +40,7 @@ typedef struct {
 
 void lexer_next(lexer_t *l)
 {
-    while (l->cur < l->end && isspace(*l->cur))
+    while (l->cur < l->end && isspace(l->cur[0]))
         l->cur++;
 
     if (l->cur >= l->end) {
@@ -49,7 +50,7 @@ void lexer_next(lexer_t *l)
 
     intptr_t off = 1;
 
-    switch (*l->cur) {
+    switch (l->cur[0]) {
     case 'a':
         if (strncmp(l->cur, "and", 3) == 0) {
             off = 3;
@@ -111,6 +112,18 @@ void lexer_next(lexer_t *l)
         break;
     case '~':
         l->kind = tok_bitnot;
+        break;
+    case '>':
+        if (l->cur[1] == '>') {
+            l->kind = tok_rshift;
+            off = 2;
+        }
+        break;
+    case '<':
+        if (l->cur[1] == '<') {
+            l->kind = tok_lshift;
+            off = 2;
+        }
         break;
     default:
         l->kind = tok_unknown;
@@ -275,6 +288,24 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs && rhs;
     case tok_logor:
         return lhs || rhs;
+    case tok_lshift:
+        if (lhs < 0 || rhs < 0) {
+            fprintf(stderr, "bitwise shitfts only work on non-negative "
+                             "integer\n");
+            exit(1);
+        } else if (rhs > 63) {
+            return 0;
+        }
+        return lhs << rhs;
+    case tok_rshift:
+        if (lhs < 0 || rhs < 0) {
+            fprintf(stderr, "bitwise shitfts only work on non-negative "
+                             "integer\n");
+            exit(1);
+        } else if (lhs > 63) {
+            return 0;
+        }
+        return lhs >> rhs;
     default:
         fprintf(stderr, "invalid binary operator\n");
         exit(1);
@@ -332,6 +363,9 @@ expr_bp bp_lookup(token_kind_t tok)
         return bp_left_assoc(70);
     case tok_bitand:
         return bp_left_assoc(80);
+    case tok_lshift:
+    case tok_rshift:
+        return bp_left_assoc(90);
     case tok_plus:
     case tok_minus:
         return bp_left_assoc(100);
