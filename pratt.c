@@ -26,9 +26,9 @@
 
 typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
-    tok_star, tok_slash, tok_percent, tok_question, tok_colon, tok_bitand,
-    tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor, tok_lognot,
-    tok_lshift, tok_rshift,
+    tok_star, tok_slash, tok_percent, tok_ternary_if, tok_ternary_else,
+    tok_bitand, tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor,
+    tok_lognot, tok_lshift, tok_rshift,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -96,10 +96,10 @@ void lexer_next(lexer_t *l)
         l->kind = tok_percent;
         break;
     case '?':
-        l->kind = tok_question;
+        l->kind = tok_ternary_if;
         break;
     case ':':
-        l->kind = tok_colon;
+        l->kind = tok_ternary_else;
         break;
     case '&':
         l->kind = tok_bitand;
@@ -351,7 +351,7 @@ typedef struct {
 expr_bp bp_lookup(token_kind_t tok)
 {
     switch (tok) {
-    case tok_question:
+    case tok_ternary_if:
         return bp_right_assoc(20);
     case tok_logor:
         return bp_left_assoc(30);
@@ -432,6 +432,11 @@ expr_t *expr_parse_number(lexer_t *l)
 
 expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
 {
+    if (lhs == NULL) {
+        fprintf(stderr, "missing LHS while parsing binary expresion\n");
+        exit(1);
+    }
+
     token_kind_t op = l->kind;
     lexer_next(l);
     expr_t *rhs = expr_parse(l, rbp);
@@ -458,6 +463,12 @@ expr_t *expr_parse_unary(lexer_t *l)
 
 expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 {
+    if (cond == NULL) {
+        fprintf(stderr, "missing first operand while parsing ternary "
+                        "conditional expression\n");
+        exit(1);
+    }
+
     lexer_next(l);
 
     expr_t *vit = expr_parse(l, 0);
@@ -465,8 +476,8 @@ expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
         fprintf(stderr, "missing second operand while parsing ternary "
                         "conditional expression\n");
         exit(1);
-    } else if (l->kind != tok_colon) {
-        fprintf(stderr, "missing ':' while parsing second operand of ternary "
+    } else if (l->kind != tok_ternary_else) {
+        fprintf(stderr, "missing ':' after parsed second operand of ternary "
                         "conditional expression\n");
         exit(1);
     }
@@ -502,8 +513,6 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
         E = expr_parse_unary(l);
         break;
     default:
-        fprintf(stderr, "unknown token '%c'\n", l->cur[-1]);
-        exit(1);
         break;
     }
 
@@ -511,7 +520,7 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
     expr_bp bp = bp_lookup(l->kind);
 
     while (min_bp < bp.left) {
-        if (l->kind == tok_question)
+        if (l->kind == tok_ternary_if)
             E = expr_parse_ternary(l, E);
         else
             E = expr_parse_binary(l, E, bp.right);
@@ -544,5 +553,7 @@ int main(int argc, char **argv)
         int64_t result = expr_eval(E);
         printf("%s = %ld\n", argv[1], result);
         expr_free(E);
+    } else {
+        fprintf(stderr, "invalid expression: %s\n", argv[1]);
     }
 }
