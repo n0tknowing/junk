@@ -380,13 +380,13 @@ expr_bp bp_lookup(token_kind_t tok)
     return (expr_bp){0, 0};
 }
 
-expr_t *expr_parse(lexer_t *l, int min_bp);
+expr_t *expr_parse_led(lexer_t *l, int min_bp);
 
 expr_t *expr_parse_subexpr(lexer_t *l)
 {
     lexer_next(l);
 
-    expr_t *E = expr_parse(l, 0);
+    expr_t *E = expr_parse_led(l, 0);
 
     if (E == NULL) {
         fprintf(stderr, "empty subexpression\n");
@@ -439,7 +439,7 @@ expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
 
     token_kind_t op = l->kind;
     lexer_next(l);
-    expr_t *rhs = expr_parse(l, rbp);
+    expr_t *rhs = expr_parse_led(l, rbp);
     if (rhs == NULL) {
         fprintf(stderr, "missing RHS while parsing binary expression\n");
         exit(1);
@@ -452,7 +452,7 @@ expr_t *expr_parse_unary(lexer_t *l)
     token_kind_t kind = l->kind;
     lexer_next(l);
 
-    expr_t *operand = expr_parse(l, bp_unary);
+    expr_t *operand = expr_parse_led(l, bp_unary);
     if (operand == NULL) {
         fprintf(stderr, "missing operand while parsing unary expression\n");
         exit(1);
@@ -471,7 +471,7 @@ expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 
     lexer_next(l);
 
-    expr_t *vit = expr_parse(l, 0);
+    expr_t *vit = expr_parse_led(l, 0);
     if (vit == NULL) {
         fprintf(stderr, "missing second operand while parsing ternary "
                         "conditional expression\n");
@@ -484,7 +484,7 @@ expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 
     lexer_next(l);
 
-    expr_t *vif = expr_parse(l, 0);
+    expr_t *vif = expr_parse_led(l, 0);
     if (vif == NULL) {
         fprintf(stderr, "missing third operand while parsing ternary "
                         "conditional expression\n");
@@ -494,11 +494,10 @@ expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
     return expr_ternary(cond, vit, vif);
 }
 
-expr_t *expr_parse(lexer_t *l, int min_bp)
+expr_t *expr_parse_nud(lexer_t *l)
 {
     expr_t *E = NULL;
 
-    // parse null denotation
     switch (l->kind) {
     case tok_lparen:
         E = expr_parse_subexpr(l);
@@ -516,7 +515,12 @@ expr_t *expr_parse(lexer_t *l, int min_bp)
         break;
     }
 
-    // parse left denotation
+    return E;
+}
+
+expr_t *expr_parse_led(lexer_t *l, int min_bp)
+{
+    expr_t *E = expr_parse_nud(l);
     expr_bp bp = bp_lookup(l->kind);
 
     while (min_bp < bp.left) {
@@ -534,7 +538,7 @@ expr_t *expr_with_len(const char *input, size_t len)
 {
     lexer_t l = {tok_unknown, input, input+len};
     lexer_next(&l);
-    return expr_parse(&l, 0);
+    return expr_parse_led(&l, 0);
 }
 
 expr_t *expr(const char *input)
