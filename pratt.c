@@ -34,12 +34,17 @@ typedef enum {
     tok_unknown = 256,
 } token_kind_t;
 
+// More information on this struct is needed, like line number and pointer span
+// for lexeme so it can produces better error messages.
 typedef struct {
     token_kind_t kind;
     const char *cur;
     const char *end;
 } lexer_t;
 
+// Alphabetical tokens should be handled separately if identifier expression
+// exists. Alphabetical operators like `and`, `not` and `or` are reserved just
+// like keywords in general purpose programming language.
 void lexer_next(lexer_t *l)
 {
     while (l->cur < l->end && isspace(l->cur[0]))
@@ -183,11 +188,11 @@ struct expr_t {
             expr_t *vit; // value if true (non-zero)
             expr_t *vif; // value if false
         } ternary;
-        int64_t literal;
+        int64_t literal; // boxed value like PyObject in CPython is better
     };
 };
 
-expr_t *expr_new(expr_kind_t kind)
+static expr_t *expr_new(expr_kind_t kind)
 {
     expr_t *E = calloc(1, sizeof(*E));
     assert(E != NULL);
@@ -195,14 +200,14 @@ expr_t *expr_new(expr_kind_t kind)
     return E;
 }
 
-expr_t *expr_literal(int64_t v)
+static expr_t *expr_literal(int64_t v)
 {
     expr_t *E = expr_new(literal_kind);
     E->literal = v;
     return E;
 }
 
-expr_t *expr_unary(token_kind_t kind, expr_t *operand)
+static expr_t *expr_unary(token_kind_t kind, expr_t *operand)
 {
     expr_t *E = expr_new(unary_kind);
     E->unary.operator = kind;
@@ -210,7 +215,7 @@ expr_t *expr_unary(token_kind_t kind, expr_t *operand)
     return E;
 }
 
-expr_t *expr_binary(token_kind_t kind, expr_t *lhs, expr_t *rhs)
+static expr_t *expr_binary(token_kind_t kind, expr_t *lhs, expr_t *rhs)
 {
     expr_t *E = expr_new(binary_kind);
     E->binary.operator = kind;
@@ -219,7 +224,7 @@ expr_t *expr_binary(token_kind_t kind, expr_t *lhs, expr_t *rhs)
     return E;
 }
 
-expr_t *expr_ternary(expr_t *cond, expr_t *vit, expr_t *vif)
+static expr_t *expr_ternary(expr_t *cond, expr_t *vit, expr_t *vif)
 {
     expr_t *E = expr_new(ternary_kind);
     E->ternary.cond = cond;
@@ -384,7 +389,7 @@ typedef struct {
 #define bp_right_assoc(bp)  (expr_bp){(bp)+1, (bp)}
 #define bp_unary  500
 
-expr_bp bp_lookup(token_kind_t tok)
+static expr_bp bp_lookup(token_kind_t tok)
 {
     switch (tok) {
     case tok_ternary_if:
@@ -423,9 +428,9 @@ expr_bp bp_lookup(token_kind_t tok)
     return (expr_bp){0, 0};
 }
 
-expr_t *expr_parse_led(lexer_t *l, int min_bp);
+static expr_t *expr_parse_led(lexer_t *l, int min_bp);
 
-expr_t *expr_parse_subexpr(lexer_t *l)
+static expr_t *expr_parse_subexpr(lexer_t *l)
 {
     lexer_next(l);
 
@@ -446,7 +451,10 @@ expr_t *expr_parse_subexpr(lexer_t *l)
     return E;
 }
 
-expr_t *expr_parse_number(lexer_t *l)
+// A somewhat naive number parser.
+// In pratice, you should handle more than this, e.g. floating-point and other
+// non-10 base integers like hexadecimal, octal and binary.
+static expr_t *expr_parse_number(lexer_t *l)
 {
     expr_t *E = NULL;
     size_t len = 0;
@@ -479,7 +487,7 @@ expr_t *expr_parse_number(lexer_t *l)
     return E;
 }
 
-expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
+static expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
 {
     if (lhs == NULL) {
         fprintf(stderr, "missing LHS while parsing binary expresion\n");
@@ -488,15 +496,17 @@ expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
 
     token_kind_t op = l->kind;
     lexer_next(l);
+
     expr_t *rhs = expr_parse_led(l, rbp);
     if (rhs == NULL) {
         fprintf(stderr, "missing RHS while parsing binary expression\n");
         exit(1);
     }
+
     return expr_binary(op, lhs, rhs);
 }
 
-expr_t *expr_parse_unary(lexer_t *l)
+static expr_t *expr_parse_unary(lexer_t *l)
 {
     token_kind_t kind = l->kind;
     lexer_next(l);
@@ -510,7 +520,7 @@ expr_t *expr_parse_unary(lexer_t *l)
     return expr_unary(kind, operand);
 }
 
-expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
+static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 {
     if (cond == NULL) {
         fprintf(stderr, "missing first operand while parsing ternary "
@@ -543,7 +553,7 @@ expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
     return expr_ternary(cond, vit, vif);
 }
 
-expr_t *expr_parse_nud(lexer_t *l)
+static expr_t *expr_parse_nud(lexer_t *l)
 {
     expr_t *E = NULL;
 
@@ -567,7 +577,7 @@ expr_t *expr_parse_nud(lexer_t *l)
     return E;
 }
 
-expr_t *expr_parse_led(lexer_t *l, int min_bp)
+static expr_t *expr_parse_led(lexer_t *l, int min_bp)
 {
     expr_t *E = expr_parse_nud(l);
     expr_bp bp = bp_lookup(l->kind);
