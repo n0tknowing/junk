@@ -11,6 +11,7 @@
 //  == != < > <= >=   left to right       Relational operators
 //  and               left to right       Logical AND
 //  or                left to right       Logical OR
+//  ?:                right to left       Ternary conditional
 
 
 #include <assert.h>
@@ -28,7 +29,8 @@ typedef enum {
     tok_eof, tok_lparen, tok_rparen, tok_number, tok_plus, tok_minus,
     tok_star, tok_slash, tok_percent, tok_ternary_if, tok_ternary_else,
     tok_bitand, tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor,
-    tok_lognot, tok_lshift, tok_rshift,
+    tok_lognot, tok_lshift, tok_rshift, tok_eq, tok_ne, tok_lt, tok_gt,
+    tok_le, tok_ge,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -117,11 +119,33 @@ void lexer_next(lexer_t *l)
         if (l->cur[1] == '>') {
             l->kind = tok_rshift;
             off = 2;
+        } else if (l->cur[1] == '=') {
+            l->kind = tok_ge;
+            off = 2;
+        } else {
+            l->kind = tok_gt;
         }
         break;
     case '<':
         if (l->cur[1] == '<') {
             l->kind = tok_lshift;
+            off = 2;
+        } else if (l->cur[1] == '=') {
+            l->kind = tok_le;
+            off = 2;
+        } else {
+            l->kind = tok_lt;
+        }
+        break;
+    case '=':
+        if (l->cur[1] == '=') {
+            l->kind = tok_eq;
+            off = 2;
+        }
+        break;
+    case '!':
+        if (l->cur[1] == '=') {
+            l->kind = tok_ne;
             off = 2;
         }
         break;
@@ -139,7 +163,7 @@ void lexer_next(lexer_t *l)
 typedef struct expr_t expr_t;
 
 typedef enum {
-    constant_kind, unary_kind, binary_kind, ternary_kind,
+    literal_kind, unary_kind, binary_kind, ternary_kind,
 } expr_kind_t;
 
 struct expr_t {
@@ -159,7 +183,7 @@ struct expr_t {
             expr_t *vit; // value if true (non-zero)
             expr_t *vif; // value if false
         } ternary;
-        int64_t constant;
+        int64_t literal;
     };
 };
 
@@ -171,10 +195,10 @@ expr_t *expr_new(expr_kind_t kind)
     return E;
 }
 
-expr_t *expr_constant(int64_t v)
+expr_t *expr_literal(int64_t v)
 {
-    expr_t *E = expr_new(constant_kind);
-    E->constant = v;
+    expr_t *E = expr_new(literal_kind);
+    E->literal = v;
     return E;
 }
 
@@ -209,7 +233,7 @@ void expr_free(expr_t *E)
     if (E == NULL) return;
 
     switch (E->kind) {
-    case constant_kind:
+    case literal_kind:
         break;
     case unary_kind:
         expr_free(E->unary.operand);
@@ -306,6 +330,18 @@ static int64_t expr_binary_eval(expr_t *E)
             return 0;
         }
         return lhs >> rhs;
+    case tok_eq:
+        return lhs == rhs;
+    case tok_ne:
+        return lhs != rhs;
+    case tok_lt:
+        return lhs < rhs;
+    case tok_gt:
+        return lhs > rhs;
+    case tok_le:
+        return lhs <= rhs;
+    case tok_ge:
+        return lhs >= rhs;
     default:
         fprintf(stderr, "invalid binary operator\n");
         exit(1);
@@ -324,8 +360,8 @@ int64_t expr_eval(expr_t *E)
     if (E == NULL) abort();
 
     switch (E->kind) {
-    case constant_kind:
-        return E->constant;
+    case literal_kind:
+        return E->literal;
     case unary_kind:
         return expr_unary_eval(E);
     case binary_kind:
@@ -357,6 +393,13 @@ expr_bp bp_lookup(token_kind_t tok)
         return bp_left_assoc(30);
     case tok_logand:
         return bp_left_assoc(40);
+    case tok_eq:
+    case tok_ne:
+    case tok_lt:
+    case tok_gt:
+    case tok_le:
+    case tok_ge:
+        return bp_left_assoc(50);
     case tok_bitor:
         return bp_left_assoc(60);
     case tok_bitxor:
@@ -424,7 +467,7 @@ expr_t *expr_parse_number(lexer_t *l)
     char *end = NULL;
     int64_t v = strtol(tmp, &end, 10);
     if (errno == 0 && end != start)
-        E = expr_constant(v);
+        E = expr_literal(v);
 
     free(tmp);
     return E;
