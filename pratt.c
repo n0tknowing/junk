@@ -450,6 +450,7 @@ expr_t *expr_parse_number(lexer_t *l)
 {
     expr_t *E = NULL;
     size_t len = 0;
+    char tmp[24] = {0};
     char *start = (char *)l->cur;
 
     do {
@@ -457,19 +458,24 @@ expr_t *expr_parse_number(lexer_t *l)
         l->cur++;
     } while (l->cur < l->end && isdigit(l->cur[0]));
 
-    lexer_next(l);
+    if (len > 23) {
+        fprintf(stderr, "number too big\n");
+        exit(1);
+    }
 
-    char *tmp = calloc(1, len + 1);
-    assert(tmp != NULL);
     memcpy(tmp, start, len);
 
     errno = 0;
     char *end = NULL;
     int64_t v = strtol(tmp, &end, 10);
-    if (errno == 0 && end != start)
+    if (errno == 0 && end != start) {
         E = expr_literal(v);
+    } else {
+        fprintf(stderr, "number too big\n");
+        exit(1);
+    }
 
-    free(tmp);
+    lexer_next(l);
     return E;
 }
 
