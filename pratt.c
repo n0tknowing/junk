@@ -15,12 +15,13 @@
 
 
 #include <assert.h>
-#include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "c/my_ctype/ctype.h"
 
 // === Lexer ================================================
 // ==========================================================
@@ -47,11 +48,14 @@ typedef struct {
 // like keywords in general purpose programming language.
 void lexer_next(lexer_t *l)
 {
-    while (l->cur < l->end && isspace(l->cur[0]))
+    while (l->cur < l->end && is_space(l->cur[0]))
         l->cur++;
 
     if (l->cur >= l->end) {
         l->kind = tok_eof;
+        return;
+    } else if (is_digit(l->cur[0])) {
+        l->kind = tok_number;
         return;
     }
 
@@ -75,11 +79,6 @@ void lexer_next(lexer_t *l)
             off = 2;
             l->kind = tok_logor;
         }
-        break;
-    case '0': case '1': case '2': case '3': case '4':
-    case '5': case '6': case '7': case '8': case '9':
-        l->kind = tok_number;
-        off = 0;
         break;
     case '(':
         l->kind = tok_lparen;
@@ -464,7 +463,7 @@ static expr_t *expr_parse_number(lexer_t *l)
     do {
         len++;
         l->cur++;
-    } while (l->cur < l->end && isdigit(l->cur[0]));
+    } while (l->cur < l->end && is_digit(l->cur[0]));
 
     if (len > 23) {
         fprintf(stderr, "number too big\n");
