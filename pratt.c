@@ -14,6 +14,7 @@
 //  ?:                right to left       Ternary conditional
 
 
+#define _GNU_SOURCE // needed for getchar_unlocked()
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
@@ -35,129 +36,142 @@ typedef enum {
     tok_unknown = 256,
 } token_kind_t;
 
-// More information on this struct is needed, like line number and pointer span
-// for lexeme so it can produces better error messages.
 typedef struct {
+    const char *lexeme;
+    size_t len, line;
     token_kind_t kind;
+} token_t;
+
+typedef struct {
+    token_t tok;
     const char *cur;
     const char *end;
 } lexer_t;
 
-// Alphabetical tokens should be handled separately if identifier expression
-// exists. Alphabetical operators like `and`, `not` and `or` are reserved just
-// like keywords in general purpose programming language.
 void lexer_next(lexer_t *l)
 {
-    while (l->cur < l->end && is_space(l->cur[0]))
+    while (l->cur < l->end && is_space(l->cur[0])) {
+        if (l->cur[0] == '\n') l->tok.line++;
         l->cur++;
+    }
+
+    l->tok.lexeme = l->cur;
+    l->tok.len = 0;
 
     if (l->cur >= l->end) {
-        l->kind = tok_eof;
+        l->tok.kind = tok_eof;
         return;
     } else if (is_digit(l->cur[0])) {
-        l->kind = tok_number;
+        do {
+            l->tok.len++;
+            l->cur++;
+        } while (l->cur < l->end && is_digit(l->cur[0]));
+        l->tok.kind = tok_number;
+        return;
+    } else if (is_alpha(l->cur[0])) {
+        if (l->cur[0] == 'a' && strncmp(l->cur, "and", 3) == 0) {
+            l->tok.kind = tok_logand;
+            l->tok.len = 3;
+            l->cur += 3;
+        } else if (l->cur[0] == 'n' && strncmp(l->cur, "not", 3) == 0)  {
+            l->tok.kind = tok_lognot;
+            l->tok.len = 3;
+            l->cur += 3;
+        } else if (l->cur[0] == 'o' && strncmp(l->cur, "or", 2) == 0) {
+            l->tok.kind = tok_logor;
+            l->tok.len = 2;
+            l->cur += 2;
+        } else { // identifier :-)
+            l->tok.kind = tok_unknown;
+            l->tok.len = l->end - l->cur; // eat all
+            l->cur += l->tok.len;
+        }
         return;
     }
 
     intptr_t off = 1;
 
     switch (l->cur[0]) {
-    case 'a':
-        if (strncmp(l->cur, "and", 3) == 0) {
-            off = 3;
-            l->kind = tok_logand;
-        }
-        break;
-    case 'n':
-        if (strncmp(l->cur, "not", 3) == 0) {
-            off = 3;
-            l->kind = tok_lognot;
-        }
-        break;
-    case 'o':
-        if (strncmp(l->cur, "or", 2) == 0) {
-            off = 2;
-            l->kind = tok_logor;
-        }
-        break;
     case '(':
-        l->kind = tok_lparen;
+        l->tok.kind = tok_lparen;
         break;
     case ')':
-        l->kind = tok_rparen;
+        l->tok.kind = tok_rparen;
         break;
     case '+':
-        l->kind = tok_plus;
+        l->tok.kind = tok_plus;
         break;
     case '-':
-        l->kind = tok_minus;
+        l->tok.kind = tok_minus;
         break;
     case '*':
-        l->kind = tok_star;
+        l->tok.kind = tok_star;
         break;
     case '/':
-        l->kind = tok_slash;
+        l->tok.kind = tok_slash;
         break;
     case '%':
-        l->kind = tok_percent;
+        l->tok.kind = tok_percent;
         break;
     case '?':
-        l->kind = tok_ternary_if;
+        l->tok.kind = tok_ternary_if;
         break;
     case ':':
-        l->kind = tok_ternary_else;
+        l->tok.kind = tok_ternary_else;
         break;
     case '&':
-        l->kind = tok_bitand;
+        l->tok.kind = tok_bitand;
         break;
     case '^':
-        l->kind = tok_bitxor;
+        l->tok.kind = tok_bitxor;
         break;
     case '|':
-        l->kind = tok_bitor;
+        l->tok.kind = tok_bitor;
         break;
     case '~':
-        l->kind = tok_bitnot;
+        l->tok.kind = tok_bitnot;
         break;
     case '>':
         if (l->cur[1] == '>') {
-            l->kind = tok_rshift;
+            l->tok.kind = tok_rshift;
             off = 2;
         } else if (l->cur[1] == '=') {
-            l->kind = tok_ge;
+            l->tok.kind = tok_ge;
             off = 2;
         } else {
-            l->kind = tok_gt;
+            l->tok.kind = tok_gt;
         }
         break;
     case '<':
         if (l->cur[1] == '<') {
-            l->kind = tok_lshift;
+            l->tok.kind = tok_lshift;
             off = 2;
         } else if (l->cur[1] == '=') {
-            l->kind = tok_le;
+            l->tok.kind = tok_le;
             off = 2;
         } else {
-            l->kind = tok_lt;
+            l->tok.kind = tok_lt;
         }
         break;
     case '=':
         if (l->cur[1] == '=') {
-            l->kind = tok_eq;
+            l->tok.kind = tok_eq;
             off = 2;
         }
         break;
     case '!':
         if (l->cur[1] == '=') {
-            l->kind = tok_ne;
+            l->tok.kind = tok_ne;
             off = 2;
         }
         break;
     default:
-        l->kind = tok_unknown;
+        l->tok.kind = tok_unknown;
+        off = l->end - l->cur; // eat all
         break;
     }
 
+    l->tok.len = (size_t)off;
     l->cur += off;
 }
 
@@ -377,7 +391,7 @@ int64_t expr_eval(expr_t *E)
     }
 }
 
-// === Parser ===============================================
+// === Expression Parser ====================================
 // ==========================================================
 
 typedef struct {
@@ -436,12 +450,12 @@ static expr_t *expr_parse_subexpr(lexer_t *l)
     expr_t *E = expr_parse_led(l, 0);
 
     if (E == NULL) {
-        fprintf(stderr, "empty subexpression\n");
+        fprintf(stderr, "missing expression after '('\n");
         exit(1);
-    } else if (l->kind == tok_eof) {
+    } else if (l->tok.kind == tok_eof) {
         fprintf(stderr, "unexpected EOF while parsing subexpression\n");
         exit(1);
-    } else if (l->kind != tok_rparen) {
+    } else if (l->tok.kind != tok_rparen) {
         fprintf(stderr, "unterminated subexpression, missing ')'\n");
         exit(1);
     }
@@ -456,26 +470,19 @@ static expr_t *expr_parse_subexpr(lexer_t *l)
 static expr_t *expr_parse_number(lexer_t *l)
 {
     expr_t *E = NULL;
-    size_t len = 0;
     char tmp[24] = {0};
-    char *start = (char *)l->cur;
 
-    do {
-        len++;
-        l->cur++;
-    } while (l->cur < l->end && is_digit(l->cur[0]));
-
-    if (len > 23) {
+    if (l->tok.len > 23) {
         fprintf(stderr, "number too big\n");
         exit(1);
     }
 
-    memcpy(tmp, start, len);
+    memcpy(tmp, l->tok.lexeme, l->tok.len);
 
     errno = 0;
     char *end = NULL;
     int64_t v = strtol(tmp, &end, 10);
-    if (errno == 0 && end != start) {
+    if (errno == 0 && end != (char *)l->tok.lexeme) {
         E = expr_literal(v);
     } else {
         fprintf(stderr, "number too big\n");
@@ -488,42 +495,45 @@ static expr_t *expr_parse_number(lexer_t *l)
 
 static expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
 {
+    token_t tok = l->tok;
+
     if (lhs == NULL) {
-        fprintf(stderr, "missing LHS while parsing binary expresion\n");
+        fprintf(stderr, "missing expression for LHS of infix operator '%.*s'\n",
+                        (int)tok.len, tok.lexeme);
         exit(1);
     }
 
-    token_kind_t op = l->kind;
     lexer_next(l);
 
     expr_t *rhs = expr_parse_led(l, rbp);
     if (rhs == NULL) {
-        fprintf(stderr, "missing RHS while parsing binary expression\n");
+        fprintf(stderr, "missing expression for RHS of infix operator '%.*s'\n",
+                        (int)tok.len, tok.lexeme);
         exit(1);
     }
 
-    return expr_binary(op, lhs, rhs);
+    return expr_binary(tok.kind, lhs, rhs);
 }
 
 static expr_t *expr_parse_unary(lexer_t *l)
 {
-    token_kind_t kind = l->kind;
+    token_t tok = l->tok;
     lexer_next(l);
 
     expr_t *operand = expr_parse_led(l, bp_unary);
     if (operand == NULL) {
-        fprintf(stderr, "missing operand while parsing unary expression\n");
+        fprintf(stderr, "missing expression for prefix operator '%.*s'\n",
+                        (int)tok.len, tok.lexeme);
         exit(1);
     }
 
-    return expr_unary(kind, operand);
+    return expr_unary(tok.kind, operand);
 }
 
 static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 {
     if (cond == NULL) {
-        fprintf(stderr, "missing first operand while parsing ternary "
-                        "conditional expression\n");
+        fprintf(stderr, "missing expression before '?'\n");
         exit(1);
     }
 
@@ -531,12 +541,10 @@ static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 
     expr_t *vit = expr_parse_led(l, 0);
     if (vit == NULL) {
-        fprintf(stderr, "missing second operand while parsing ternary "
-                        "conditional expression\n");
+        fprintf(stderr, "missing expression after '?'\n");
         exit(1);
-    } else if (l->kind != tok_ternary_else) {
-        fprintf(stderr, "missing ':' after parsed second operand of ternary "
-                        "conditional expression\n");
+    } else if (l->tok.kind != tok_ternary_else) {
+        fprintf(stderr, "missing ':' in ternary conditional expression\n");
         exit(1);
     }
 
@@ -544,8 +552,7 @@ static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
 
     expr_t *vif = expr_parse_led(l, 0);
     if (vif == NULL) {
-        fprintf(stderr, "missing third operand while parsing ternary "
-                        "conditional expression\n");
+        fprintf(stderr, "missing expression after ':'\n");
         exit(1);
     }
 
@@ -556,7 +563,7 @@ static expr_t *expr_parse_nud(lexer_t *l)
 {
     expr_t *E = NULL;
 
-    switch (l->kind) {
+    switch (l->tok.kind) {
     case tok_lparen:
         E = expr_parse_subexpr(l);
         break;
@@ -579,14 +586,14 @@ static expr_t *expr_parse_nud(lexer_t *l)
 static expr_t *expr_parse_led(lexer_t *l, int min_bp)
 {
     expr_t *E = expr_parse_nud(l);
-    expr_bp bp = bp_lookup(l->kind);
+    expr_bp bp = bp_lookup(l->tok.kind);
 
     while (min_bp < bp.left) {
-        if (l->kind == tok_ternary_if)
+        if (l->tok.kind == tok_ternary_if)
             E = expr_parse_ternary(l, E);
         else
             E = expr_parse_binary(l, E, bp.right);
-        bp = bp_lookup(l->kind);
+        bp = bp_lookup(l->tok.kind);
     }
 
     return E;
@@ -594,7 +601,8 @@ static expr_t *expr_parse_led(lexer_t *l, int min_bp)
 
 expr_t *expr_with_len(const char *input, size_t len)
 {
-    lexer_t l = {tok_unknown, input, input+len};
+    token_t t = {NULL,0,1,tok_unknown};
+    lexer_t l = {t, input, input+len};
     lexer_next(&l);
     return expr_parse_led(&l, 0);
 }
@@ -604,18 +612,72 @@ expr_t *expr(const char *input)
     return expr_with_len(input, strlen(input));
 }
 
-// === Test =================================================
+// === REPL =================================================
 // ==========================================================
 
-int main(int argc, char **argv)
+#define unlikely(x) (__builtin_expect(!!(x), 0))
+
+static size_t getinput(char *in, size_t n, FILE *fp)
 {
-    const char *s = argc < 2 ? "1 + 2" : argv[1];
-    expr_t *E = expr(s);
-    if (E != NULL) {
-        int64_t result = expr_eval(E);
-        printf("%s = %ld\n", s, result);
-        expr_free(E);
-    } else {
-        fprintf(stderr, "invalid expression: %s\n", s);
+    int ch;
+    unsigned char *p;
+
+    if (unlikely(in == NULL) || unlikely(fp == NULL)) {
+        return 0;
+    } else if (unlikely(n == 0)) {
+        return 0;
+    } else if (unlikely(n == 1)) {
+        *in = '\0';
+        return 0;
     }
+
+    p = (unsigned char *)in;
+    n -= 1; /* for '\0' */
+
+    /**
+     * note that character encoding other than ASCII is accepted here.
+     * so make sure your buffer large enough to handles it otherwise it will
+     * splitted and you will get garbage result.
+     */
+    while (n > 1 && (ch = getc_unlocked(fp)) != EOF && ch != '\0') {
+        *p++ = (unsigned char)ch; /* integer promotions are annoying */
+        if (ch == '\n')
+            break;
+        n--;
+    }
+
+    if (n == 1) /* truncated or empty input or maybe done */
+        *p++ = '\n';
+
+    *p = '\0';
+    return (size_t)(p - (unsigned char *)in); /* always > 0 */
+}
+
+static void repl(void)
+{
+    char input[256];
+
+    while (1) {
+        printf(">>> "); fflush(stdout);
+        size_t nread = getinput(input, sizeof(input), stdin);
+        if (nread == 0) {
+            putchar('\n');
+            break;
+        } else if (nread == 1) {
+            continue;
+        }
+        expr_t *E = expr_with_len(input, nread);
+        if (E == NULL) {
+            printf("invalid expression: %s", input);
+        } else {
+            int64_t result = expr_eval(E);
+            printf("%ld\n", result);
+            expr_free(E);
+        }
+    }
+}
+
+int main(void)
+{
+    repl();
 }
