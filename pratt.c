@@ -610,13 +610,13 @@ expr_t *expr(const char *input)
 
 int main(int argc, char **argv)
 {
-    assert(argc > 1); // lazy edition
-    expr_t *E = expr(argv[1]);
+    const char *s = argc < 2 ? "1 + 2" : argv[1];
+    expr_t *E = expr(s);
     if (E != NULL) {
         int64_t result = expr_eval(E);
-        printf("%s = %ld\n", argv[1], result);
+        printf("%s = %ld\n", s, result);
         expr_free(E);
     } else {
-        fprintf(stderr, "invalid expression: %s\n", argv[1]);
+        fprintf(stderr, "invalid expression: %s\n", s);
     }
 }
