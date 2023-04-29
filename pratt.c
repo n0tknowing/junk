@@ -319,8 +319,8 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs || rhs;
     case tok_lshift:
         if (lhs < 0 || rhs < 0) {
-            fprintf(stderr, "bitwise shitfts only work on non-negative "
-                             "integer\n");
+            fprintf(stderr, "bitwise shifts only work on non-negative "
+                            "integer\n");
             exit(1);
         } else if (rhs > 63) {
             return 0;
@@ -328,8 +328,8 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs << rhs;
     case tok_rshift:
         if (lhs < 0 || rhs < 0) {
-            fprintf(stderr, "bitwise shitfts only work on non-negative "
-                             "integer\n");
+            fprintf(stderr, "bitwise shifts only work on non-negative "
+                            "integer\n");
             exit(1);
         } else if (lhs > 63) {
             return 0;
