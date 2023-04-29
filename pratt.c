@@ -38,7 +38,7 @@ typedef enum {
 
 typedef struct {
     const char *lexeme;
-    size_t len, line;
+    int len, line;
     token_kind_t kind;
 } token_t;
 
@@ -89,7 +89,7 @@ void lexer_next(lexer_t *l)
         return;
     }
 
-    intptr_t off = 1;
+    int off = 1;
 
     switch (l->cur[0]) {
     case '(':
@@ -171,7 +171,7 @@ void lexer_next(lexer_t *l)
         break;
     }
 
-    l->tok.len = (size_t)off;
+    l->tok.len = off;
     l->cur += off;
 }
 
@@ -181,7 +181,7 @@ void lexer_next(lexer_t *l)
 typedef struct expr_t expr_t;
 
 typedef enum {
-    literal_kind, unary_kind, binary_kind, ternary_kind,
+    literal_kind, unary_kind, binary_kind, ternary_kind, subexpr_kind,
 } expr_kind_t;
 
 struct expr_t {
@@ -201,6 +201,9 @@ struct expr_t {
             expr_t *vit; // value if true (non-zero)
             expr_t *vif; // value if false
         } ternary;
+        struct {
+            expr_t *sub;
+        } subexpr;
         int64_t literal; // boxed value like PyObject in CPython is better
     };
 };
@@ -246,6 +249,13 @@ static expr_t *expr_ternary(expr_t *cond, expr_t *vit, expr_t *vif)
     return E;
 }
 
+static expr_t *expr_subexpr(expr_t *expr)
+{
+    expr_t *E = expr_new(subexpr_kind);
+    E->subexpr.sub = expr;
+    return E;
+}
+
 void expr_free(expr_t *E)
 {
     if (E == NULL) return;
@@ -264,6 +274,9 @@ void expr_free(expr_t *E)
         expr_free(E->ternary.cond);
         expr_free(E->ternary.vit);
         expr_free(E->ternary.vif);
+        break;
+    case subexpr_kind:
+        expr_free(E->subexpr.sub);
         break;
     default:
         break;
@@ -386,6 +399,8 @@ int64_t expr_eval(expr_t *E)
         return expr_binary_eval(E);
     case ternary_kind:
         return expr_ternary_eval(E);
+    case subexpr_kind:
+        return expr_eval(E->subexpr.sub);
     default:
         abort();
     }
@@ -475,7 +490,7 @@ static expr_t *expr_parse_subexpr(parser_t *p)
     }
 
     lexer_next(&p->lex);
-    return E;
+    return expr_subexpr(E);
 }
 
 // A somewhat naive number parser.
@@ -513,7 +528,7 @@ static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
 
     if (lhs == NULL) {
         fprintf(stderr, "missing expression for LHS of infix operator '%.*s'\n",
-                        (int)tok.len, tok.lexeme);
+                        tok.len, tok.lexeme);
         exit(1);
     }
 
@@ -522,7 +537,7 @@ static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
     expr_t *rhs = expr_parse_led(p, rbp);
     if (rhs == NULL) {
         fprintf(stderr, "missing expression for RHS of infix operator '%.*s'\n",
-                        (int)tok.len, tok.lexeme);
+                        tok.len, tok.lexeme);
         exit(1);
     }
 
@@ -537,7 +552,7 @@ static expr_t *expr_parse_unary(parser_t *p)
     expr_t *operand = expr_parse_led(p, bp_unary);
     if (operand == NULL) {
         fprintf(stderr, "missing expression for prefix operator '%.*s'\n",
-                        (int)tok.len, tok.lexeme);
+                        tok.len, tok.lexeme);
         exit(1);
     }
 
