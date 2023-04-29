@@ -81,7 +81,7 @@ void lexer_next(lexer_t *l)
             l->tok.kind = tok_logor;
             l->tok.len = 2;
             l->cur += 2;
-        } else { // identifier :-)
+        } else { // should be identifier :-)
             l->tok.kind = tok_unknown;
             l->tok.len = l->end - l->cur; // eat all
             l->cur += l->tok.len;
@@ -391,6 +391,20 @@ int64_t expr_eval(expr_t *E)
     }
 }
 
+// === Parser ===============================================
+// ==========================================================
+
+typedef struct {
+    lexer_t lex;
+} parser_t;
+
+void parser_init(parser_t *p, const char *input, size_t len)
+{
+    token_t t = {NULL, 0, 1, tok_unknown};
+    lexer_t l = {t, input, input+len};
+    p->lex = l;
+}
+
 // === Expression Parser ====================================
 // ==========================================================
 
@@ -441,61 +455,61 @@ static expr_bp bp_lookup(token_kind_t tok)
     return (expr_bp){0, 0};
 }
 
-static expr_t *expr_parse_led(lexer_t *l, int min_bp);
+static expr_t *expr_parse_led(parser_t *p, int min_bp);
 
-static expr_t *expr_parse_subexpr(lexer_t *l)
+static expr_t *expr_parse_subexpr(parser_t *p)
 {
-    lexer_next(l);
+    lexer_next(&p->lex);
 
-    expr_t *E = expr_parse_led(l, 0);
+    expr_t *E = expr_parse_led(p, 0);
 
     if (E == NULL) {
         fprintf(stderr, "missing expression after '('\n");
         exit(1);
-    } else if (l->tok.kind == tok_eof) {
+    } else if (p->lex.tok.kind == tok_eof) {
         fprintf(stderr, "unexpected EOF while parsing subexpression\n");
         exit(1);
-    } else if (l->tok.kind != tok_rparen) {
+    } else if (p->lex.tok.kind != tok_rparen) {
         fprintf(stderr, "unterminated subexpression, missing ')'\n");
         exit(1);
     }
 
-    lexer_next(l);
+    lexer_next(&p->lex);
     return E;
 }
 
 // A somewhat naive number parser.
 // In pratice, you should handle more than this, e.g. floating-point and other
 // non-10 base integers like hexadecimal, octal and binary.
-static expr_t *expr_parse_number(lexer_t *l)
+static expr_t *expr_parse_number(parser_t *p)
 {
     expr_t *E = NULL;
     char tmp[24] = {0};
 
-    if (l->tok.len > 23) {
+    if (p->lex.tok.len > 23) {
         fprintf(stderr, "number too big\n");
         exit(1);
     }
 
-    memcpy(tmp, l->tok.lexeme, l->tok.len);
+    memcpy(tmp, p->lex.tok.lexeme, p->lex.tok.len);
 
     errno = 0;
     char *end = NULL;
     int64_t v = strtol(tmp, &end, 10);
-    if (errno == 0 && end != (char *)l->tok.lexeme) {
+    if (errno == 0 && end != (char *)p->lex.tok.lexeme) {
         E = expr_literal(v);
     } else {
         fprintf(stderr, "number too big\n");
         exit(1);
     }
 
-    lexer_next(l);
+    lexer_next(&p->lex);
     return E;
 }
 
-static expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
+static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
 {
-    token_t tok = l->tok;
+    token_t tok = p->lex.tok;
 
     if (lhs == NULL) {
         fprintf(stderr, "missing expression for LHS of infix operator '%.*s'\n",
@@ -503,9 +517,9 @@ static expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
         exit(1);
     }
 
-    lexer_next(l);
+    lexer_next(&p->lex);
 
-    expr_t *rhs = expr_parse_led(l, rbp);
+    expr_t *rhs = expr_parse_led(p, rbp);
     if (rhs == NULL) {
         fprintf(stderr, "missing expression for RHS of infix operator '%.*s'\n",
                         (int)tok.len, tok.lexeme);
@@ -515,12 +529,12 @@ static expr_t *expr_parse_binary(lexer_t *l, expr_t *lhs, int rbp)
     return expr_binary(tok.kind, lhs, rhs);
 }
 
-static expr_t *expr_parse_unary(lexer_t *l)
+static expr_t *expr_parse_unary(parser_t *p)
 {
-    token_t tok = l->tok;
-    lexer_next(l);
+    token_t tok = p->lex.tok;
+    lexer_next(&p->lex);
 
-    expr_t *operand = expr_parse_led(l, bp_unary);
+    expr_t *operand = expr_parse_led(p, bp_unary);
     if (operand == NULL) {
         fprintf(stderr, "missing expression for prefix operator '%.*s'\n",
                         (int)tok.len, tok.lexeme);
@@ -530,27 +544,27 @@ static expr_t *expr_parse_unary(lexer_t *l)
     return expr_unary(tok.kind, operand);
 }
 
-static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
+static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
 {
     if (cond == NULL) {
         fprintf(stderr, "missing expression before '?'\n");
         exit(1);
     }
 
-    lexer_next(l);
+    lexer_next(&p->lex);
 
-    expr_t *vit = expr_parse_led(l, 0);
+    expr_t *vit = expr_parse_led(p, 0);
     if (vit == NULL) {
         fprintf(stderr, "missing expression after '?'\n");
         exit(1);
-    } else if (l->tok.kind != tok_ternary_else) {
+    } else if (p->lex.tok.kind != tok_ternary_else) {
         fprintf(stderr, "missing ':' in ternary conditional expression\n");
         exit(1);
     }
 
-    lexer_next(l);
+    lexer_next(&p->lex);
 
-    expr_t *vif = expr_parse_led(l, 0);
+    expr_t *vif = expr_parse_led(p, 0);
     if (vif == NULL) {
         fprintf(stderr, "missing expression after ':'\n");
         exit(1);
@@ -559,22 +573,22 @@ static expr_t *expr_parse_ternary(lexer_t *l, expr_t *cond)
     return expr_ternary(cond, vit, vif);
 }
 
-static expr_t *expr_parse_nud(lexer_t *l)
+static expr_t *expr_parse_nud(parser_t *p)
 {
     expr_t *E = NULL;
 
-    switch (l->tok.kind) {
+    switch (p->lex.tok.kind) {
     case tok_lparen:
-        E = expr_parse_subexpr(l);
+        E = expr_parse_subexpr(p);
         break;
     case tok_number:
-        E = expr_parse_number(l);
+        E = expr_parse_number(p);
         break;
     case tok_plus:
     case tok_minus:
     case tok_bitnot:
     case tok_lognot:
-        E = expr_parse_unary(l);
+        E = expr_parse_unary(p);
         break;
     default:
         break;
@@ -583,17 +597,17 @@ static expr_t *expr_parse_nud(lexer_t *l)
     return E;
 }
 
-static expr_t *expr_parse_led(lexer_t *l, int min_bp)
+static expr_t *expr_parse_led(parser_t *p, int min_bp)
 {
-    expr_t *E = expr_parse_nud(l);
-    expr_bp bp = bp_lookup(l->tok.kind);
+    expr_t *E = expr_parse_nud(p);
+    expr_bp bp = bp_lookup(p->lex.tok.kind);
 
     while (min_bp < bp.left) {
-        if (l->tok.kind == tok_ternary_if)
-            E = expr_parse_ternary(l, E);
+        if (p->lex.tok.kind == tok_ternary_if)
+            E = expr_parse_ternary(p, E);
         else
-            E = expr_parse_binary(l, E, bp.right);
-        bp = bp_lookup(l->tok.kind);
+            E = expr_parse_binary(p, E, bp.right);
+        bp = bp_lookup(p->lex.tok.kind);
     }
 
     return E;
@@ -601,10 +615,10 @@ static expr_t *expr_parse_led(lexer_t *l, int min_bp)
 
 expr_t *expr_with_len(const char *input, size_t len)
 {
-    token_t t = {NULL,0,1,tok_unknown};
-    lexer_t l = {t, input, input+len};
-    lexer_next(&l);
-    return expr_parse_led(&l, 0);
+    parser_t p;
+    parser_init(&p, input, len);
+    lexer_next(&p.lex);
+    return expr_parse_led(&p, 0);
 }
 
 expr_t *expr(const char *input)
@@ -677,7 +691,19 @@ static void repl(void)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    repl();
+    if (argc > 1) {
+        expr_t *E = expr(argv[1]);
+        if (E != NULL) {
+            int64_t result = expr_eval(E);
+            printf("%ld\n", result);
+            expr_free(E);
+        } else {
+            printf("invalid expression: %s\n", argv[1]);
+            return 1;
+        }
+    } else {
+        repl();
+    }
 }
