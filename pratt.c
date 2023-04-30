@@ -539,6 +539,7 @@ static expr_t *expr_parse_number(parser_t *p)
 static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
 {
     token_t tok = p->lex.tok;
+    lexer_next(&p->lex);
 
     if (lhs == NULL) {
         parser_set_error(
@@ -547,8 +548,6 @@ static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
                  tok.len, tok.lexeme);
         return NULL;
     }
-
-    lexer_next(&p->lex);
 
     expr_t *rhs = expr_parse_led(p, rbp);
     if (rhs == NULL) {
@@ -582,13 +581,13 @@ static expr_t *expr_parse_unary(parser_t *p)
 
 static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
 {
+    lexer_next(&p->lex);
+
     if (cond == NULL) {
         parser_set_error(p, "missing expression before '?'");
         expr_free(cond);
         return NULL;
     }
-
-    lexer_next(&p->lex);
 
     expr_t *vit = expr_parse_led(p, 0);
     if (vit == NULL) {
