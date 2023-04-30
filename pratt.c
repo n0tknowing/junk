@@ -17,6 +17,7 @@
 #define _GNU_SOURCE // needed for getchar_unlocked()
 #include <assert.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -411,13 +412,24 @@ int64_t expr_eval(expr_t *E)
 
 typedef struct {
     lexer_t lex;
+    char error_msg[256];
 } parser_t;
+
+void parser_set_error(parser_t *p, const char *s, ...)
+{
+    va_list ap;
+
+    va_start(ap, s);
+    vsnprintf(p->error_msg, sizeof(p->error_msg), s, ap);
+    va_end(ap);
+}
 
 void parser_init(parser_t *p, const char *input, size_t len)
 {
     token_t t = {NULL, 0, 1, tok_unknown};
     lexer_t l = {t, input, input+len};
     p->lex = l;
+    p->error_msg[0] = 0;
 }
 
 // === Expression Parser ====================================
@@ -479,14 +491,16 @@ static expr_t *expr_parse_subexpr(parser_t *p)
     expr_t *E = expr_parse_led(p, 0);
 
     if (E == NULL) {
-        fprintf(stderr, "missing expression after '('\n");
-        exit(1);
+        parser_set_error(p, "missing expression after '('");
+        return NULL;
     } else if (p->lex.tok.kind == tok_eof) {
-        fprintf(stderr, "unexpected EOF while parsing subexpression\n");
-        exit(1);
+        parser_set_error(p, "unexpected EOF while parsing subexpression");
+        expr_free(E);
+        return NULL;
     } else if (p->lex.tok.kind != tok_rparen) {
-        fprintf(stderr, "unterminated subexpression, missing ')'\n");
-        exit(1);
+        parser_set_error(p, "unterminated subexpression, missing ')'");
+        expr_free(E);
+        return NULL;
     }
 
     lexer_next(&p->lex);
@@ -502,8 +516,8 @@ static expr_t *expr_parse_number(parser_t *p)
     char tmp[24] = {0};
 
     if (p->lex.tok.len > 23) {
-        fprintf(stderr, "number too big\n");
-        exit(1);
+        parser_set_error(p, "number too big");
+        return NULL;
     }
 
     memcpy(tmp, p->lex.tok.lexeme, p->lex.tok.len);
@@ -514,8 +528,8 @@ static expr_t *expr_parse_number(parser_t *p)
     if (errno == 0 && end != (char *)p->lex.tok.lexeme) {
         E = expr_literal(v);
     } else {
-        fprintf(stderr, "number too big\n");
-        exit(1);
+        parser_set_error(p, "number too big");
+        return NULL;
     }
 
     lexer_next(&p->lex);
@@ -527,18 +541,23 @@ static expr_t *expr_parse_binary(parser_t *p, expr_t *lhs, int rbp)
     token_t tok = p->lex.tok;
 
     if (lhs == NULL) {
-        fprintf(stderr, "missing expression for LHS of infix operator '%.*s'\n",
-                        tok.len, tok.lexeme);
-        exit(1);
+        parser_set_error(
+                 p,
+                "missing expression for LHS of infix operator '%.*s'",
+                 tok.len, tok.lexeme);
+        return NULL;
     }
 
     lexer_next(&p->lex);
 
     expr_t *rhs = expr_parse_led(p, rbp);
     if (rhs == NULL) {
-        fprintf(stderr, "missing expression for RHS of infix operator '%.*s'\n",
-                        tok.len, tok.lexeme);
-        exit(1);
+        parser_set_error(
+                p,
+               "missing expression for RHS of infix operator '%.*s'",
+                tok.len, tok.lexeme);
+        expr_free(lhs);
+        return NULL;
     }
 
     return expr_binary(tok.kind, lhs, rhs);
@@ -551,9 +570,11 @@ static expr_t *expr_parse_unary(parser_t *p)
 
     expr_t *operand = expr_parse_led(p, bp_unary);
     if (operand == NULL) {
-        fprintf(stderr, "missing expression for prefix operator '%.*s'\n",
-                        tok.len, tok.lexeme);
-        exit(1);
+        parser_set_error(
+                p,
+               "missing expression for prefix operator '%.*s'",
+                tok.len, tok.lexeme);
+        return NULL;
     }
 
     return expr_unary(tok.kind, operand);
@@ -562,27 +583,33 @@ static expr_t *expr_parse_unary(parser_t *p)
 static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
 {
     if (cond == NULL) {
-        fprintf(stderr, "missing expression before '?'\n");
-        exit(1);
+        parser_set_error(p, "missing expression before '?'");
+        expr_free(cond);
+        return NULL;
     }
 
     lexer_next(&p->lex);
 
     expr_t *vit = expr_parse_led(p, 0);
     if (vit == NULL) {
-        fprintf(stderr, "missing expression after '?'\n");
-        exit(1);
+        parser_set_error(p, "missing expression after '?'");
+        expr_free(cond);
+        return NULL;
     } else if (p->lex.tok.kind != tok_ternary_else) {
-        fprintf(stderr, "missing ':' in ternary conditional expression\n");
-        exit(1);
+        parser_set_error(p, "missing ':' in ternary conditional expression");
+        expr_free(cond);
+        expr_free(vit);
+        return NULL;
     }
 
     lexer_next(&p->lex);
 
     expr_t *vif = expr_parse_led(p, 0);
     if (vif == NULL) {
-        fprintf(stderr, "missing expression after ':'\n");
-        exit(1);
+        parser_set_error(p, "missing expression after ':'");
+        expr_free(cond);
+        expr_free(vit);
+        return NULL;
     }
 
     return expr_ternary(cond, vit, vif);
@@ -628,17 +655,41 @@ static expr_t *expr_parse_led(parser_t *p, int min_bp)
     return E;
 }
 
-expr_t *expr_with_len(const char *input, size_t len)
+// === Interpreter ==========================================
+// ==========================================================
+
+typedef struct {
+    const char *input;
+    size_t len;
+    char error_msg[256];
+} interpreter_t;
+
+void interpreter_init(interpreter_t *i, const char *s, size_t n)
 {
-    parser_t p;
-    parser_init(&p, input, len);
-    lexer_next(&p.lex);
-    return expr_parse_led(&p, 0);
+    i->input = s;
+    i->len = n;
+    i->error_msg[0] = 0;
 }
 
-expr_t *expr(const char *input)
+expr_t *interpret_expr(interpreter_t *i)
 {
-    return expr_with_len(input, strlen(input));
+    parser_t p;
+    parser_init(&p, i->input, i->len);
+
+    lexer_next(&p.lex);
+
+    expr_t *E = expr_parse_led(&p, 0);
+    if (E == NULL) {
+        size_t err_len = strlen(p.error_msg);
+        if (err_len == 0) {
+            snprintf(i->error_msg, sizeof(i->error_msg), "invalid expression");
+        } else {
+            memcpy(i->error_msg, p.error_msg, err_len);
+            i->error_msg[err_len] = 0;
+        }
+    }
+
+    return E;
 }
 
 // === REPL =================================================
@@ -695,9 +746,13 @@ static void repl(void)
         } else if (nread == 1) {
             continue;
         }
-        expr_t *E = expr_with_len(input, nread);
+        input[nread - 1] = 0;
+        interpreter_t ctx;
+        interpreter_init(&ctx, input, nread);
+        expr_t *E = interpret_expr(&ctx);
         if (E == NULL) {
-            printf("invalid expression: %s", input);
+            printf("failed to evaluate %s\n", input);
+            printf("reason: %s\n", ctx.error_msg);
         } else {
             int64_t result = expr_eval(E);
             printf("%ld\n", result);
@@ -709,13 +764,16 @@ static void repl(void)
 int main(int argc, char **argv)
 {
     if (argc > 1) {
-        expr_t *E = expr(argv[1]);
+        interpreter_t ctx;
+        interpreter_init(&ctx, argv[1], strlen(argv[1]));
+        expr_t *E = interpret_expr(&ctx);
         if (E != NULL) {
             int64_t result = expr_eval(E);
             printf("%ld\n", result);
             expr_free(E);
         } else {
-            printf("invalid expression: %s\n", argv[1]);
+            printf("failed to evaluate %s\n", argv[1]);
+            printf("reason: %s\n", ctx.error_msg);
             return 1;
         }
     } else {
