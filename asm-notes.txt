@@ -1,15 +1,23 @@
-General Purpose Registers on x86
+x86 General Purpose Registers on linux
 
-- rsp = Stack pointer
-- rax = Return value
-- rdi = 1st argument
-- rsi = 2nd argument
-- rdx = 3rd argument
-- rcx = 4th argument
-- r8 = 5th argument
-- r9 = 6th argument
-- r10, r11 = Callee-owned
-- rbx, rbp, r12 - r15 = Caller-owned
+ 64-bit  |  32-bit  |  16-bit  |  8-bit
+ --------------------------------------
+  rsp    |   esp    |   sp     |   spl  = stack pointer
+  rax    |   eax    |   ax     |    al  = return value
+  rdi    |   edi    |   di     |   dil  = 1st argument
+  rsi    |   esi    |   si     |   sil  = 2nd argument
+  rdx    |   edx    |   dx     |    dl  = 3rd argument
+  rcx    |   ecx    |   cx     |    cl  = 4th argument
+  r8     |   r8d    |  r8w     |   r8b  = 5th argument
+  r9     |   r9d    |  r9w     |   r9b  = 6th argument
+  r10    |  r10d    | r10d     |  r10b  = callee-owned
+  r11    |  r11d    | r11d     |  r11b  = callee-owned
+  rbx    |  ebx     |   bx     |    bl  = caller-owned
+  rbp    |  ebp     |   bp     |   bpl  = caller-owned
+  r12    |  r12d    | r12d     |  r12b  = caller-owned
+  r13    |  r13d    | r13d     |  r13b  = caller-owned
+  r14    |  r14d    | r14d     |  r14b  = caller-owned
+  r15    |  r15d    | r15d     |  r15b  = caller-owned
 
 Instruction suffixes (AT&T syntax)
 
