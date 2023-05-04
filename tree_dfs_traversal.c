@@ -22,12 +22,17 @@ struct Node *new_node(struct Node *left, struct Node *right, int v)
     return node;
 }
 
+struct Node *new_leaf(int v)
+{
+    return new_node(NULL, NULL, v);
+}
+
 void print_tree_preorder(struct Node *root, int indent)
 {
     if (root == NULL)
         return;
 
-    printf("%*s%c\n", indent, " ", root->val);
+    printf("%*s%d\n", indent, " ", root->val);
     fflush(stdout);
     print_tree_preorder(root->left, indent + 4);
     print_tree_preorder(root->right, indent + 4);
@@ -40,7 +45,7 @@ void print_tree_postorder(struct Node *root, int indent)
 
     print_tree_postorder(root->left, indent + 4);
     print_tree_postorder(root->right, indent + 4);
-    printf("%*s%c\n", indent, " ", root->val);
+    printf("%*s%d\n", indent, " ", root->val);
     fflush(stdout);
 }
 
@@ -50,7 +55,7 @@ void print_tree_inorder(struct Node *root, int indent)
         return;
 
     print_tree_inorder(root->left, indent + 4);
-    printf("%*s%c\n", indent, " ", root->val);
+    printf("%*s%d\n", indent, " ", root->val);
     fflush(stdout);
     print_tree_inorder(root->right, indent + 4);
 }
@@ -67,27 +72,28 @@ void destroy_tree(struct Node *root)
 
 int main(void)
 {
-    struct Node *a, *b, *c, *d, *e, *f, *g;
+    struct Node *node0, *node1, *node2, *node3, *node4, *node5;
+    struct Node *node;
 
-    a = new_node(NULL, NULL, '1');
-    b = new_node(NULL, NULL, '2');
-    c = new_node(NULL, NULL, '3');
-    d = new_node(NULL, NULL, '4');
-    e = new_node(b, c, '*');
-    f = new_node(a, e, '+');
-    g = new_node(f, d, '-');
+    node0 = new_node(new_leaf(1), new_leaf(3), 2);
+    node1 = new_node(new_leaf(5), new_leaf(7), 6);
+    node2 = new_node(new_leaf(9), new_leaf(11), 10);
+    node3 = new_node(new_leaf(13), new_leaf(15), 14);
+    node4 = new_node(node0, node1, 4);
+    node5 = new_node(node2, node3, 12);
+    node = new_node(node4, node5, 8);
 
     printf("Pre-order:\n\n");
-    print_tree_preorder(g, 0);
+    print_tree_preorder(node, 0);
     printf("\n");
 
     printf("In-order:\n\n");
-    print_tree_inorder(g, 0);
+    print_tree_inorder(node, 0);
     printf("\n");
 
     printf("Post-order:\n\n");
-    print_tree_postorder(g, 0);
+    print_tree_postorder(node, 0);
     printf("\n");
 
-    destroy_tree(g);
+    destroy_tree(node);
 }
