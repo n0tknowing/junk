@@ -182,7 +182,7 @@ void lexer_next(lexer_t *l)
 typedef struct expr_t expr_t;
 
 typedef enum {
-    literal_kind, unary_kind, binary_kind, ternary_kind, subexpr_kind,
+    literal_kind, unary_kind, binary_kind, ternary_kind,
 } expr_kind_t;
 
 struct expr_t {
@@ -202,9 +202,6 @@ struct expr_t {
             expr_t *vit; // value if true (non-zero)
             expr_t *vif; // value if false
         } ternary;
-        struct {
-            expr_t *sub;
-        } subexpr;
         int64_t literal; // boxed value like PyObject in CPython is better
     };
 };
@@ -250,13 +247,6 @@ static expr_t *expr_ternary(expr_t *cond, expr_t *vit, expr_t *vif)
     return E;
 }
 
-static expr_t *expr_subexpr(expr_t *expr)
-{
-    expr_t *E = expr_new(subexpr_kind);
-    E->subexpr.sub = expr;
-    return E;
-}
-
 void expr_free(expr_t *E)
 {
     if (E == NULL) return;
@@ -275,9 +265,6 @@ void expr_free(expr_t *E)
         expr_free(E->ternary.cond);
         expr_free(E->ternary.vit);
         expr_free(E->ternary.vif);
-        break;
-    case subexpr_kind:
-        expr_free(E->subexpr.sub);
         break;
     default:
         break;
@@ -400,8 +387,6 @@ int64_t expr_eval(expr_t *E)
         return expr_binary_eval(E);
     case ternary_kind:
         return expr_ternary_eval(E);
-    case subexpr_kind:
-        return expr_eval(E->subexpr.sub);
     default:
         abort();
     }
@@ -504,7 +489,7 @@ static expr_t *expr_parse_subexpr(parser_t *p)
     }
 
     lexer_next(&p->lex);
-    return expr_subexpr(E);
+    return E;
 }
 
 // A somewhat naive number parser.
