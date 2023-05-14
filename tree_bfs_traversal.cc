@@ -2,36 +2,39 @@
 
 #include <cassert>
 #include <cstdio>
+#include <memory>
 #include <vector>
 #include <queue>
 
 struct Node {
-    Node *left;
-    Node *right;
+    std::shared_ptr<Node> left;
+    std::shared_ptr<Node> right;
     int val;
 };
 
-Node *new_node(Node *left, Node *right, int v) {
-    Node *node = new Node;
+using node_ptr = std::shared_ptr<Node>;
+
+node_ptr new_node(node_ptr left, node_ptr right, int v) {
+    node_ptr node = std::make_shared<Node>();
     node->left = left;
     node->right = right;
     node->val = v;
     return node;
 }
 
-Node *new_leaf(int v) {
+node_ptr new_leaf(int v) {
     return new_node(nullptr, nullptr, v);
 }
 
-std::vector<int> traverse(Node *root) {
+std::vector<int> traverse(node_ptr root) {
     std::vector<int> res;
     res.reserve(15);
 
-    std::queue<Node *> q;
+    std::queue<node_ptr> q;
     q.push(root);
 
     while (!q.empty()) {
-        Node *node = q.front();
+        node_ptr& node = q.front();
         q.pop();
         res.push_back(node->val);
         if (node->left != nullptr)
@@ -43,18 +46,9 @@ std::vector<int> traverse(Node *root) {
     return res;
 }
 
-void destroy_tree(Node *root) {
-    if (root == nullptr)
-        return;
-
-    destroy_tree(root->left);
-    destroy_tree(root->right);
-    delete root;
-}
-
 int main(void)
 {
-    Node *node0, *node1, *node2, *node3, *node4, *node5, *node;
+    node_ptr node0, node1, node2, node3, node4, node5, node;
 
     node0 = new_node(new_leaf(1), new_leaf(3), 2);
     node1 = new_node(new_leaf(5), new_leaf(7), 6);
@@ -68,6 +62,4 @@ int main(void)
     for (const int i : v)
         printf("%d ", i);
     printf("\n");
-
-    destroy_tree(node);
 }
