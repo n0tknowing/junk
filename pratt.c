@@ -262,8 +262,9 @@ void expr_free(expr_t *E)
         expr_free(E->binary.rhs);
         break;
     case ternary_kind:
+        if (E->ternary.cond != E->ternary.vit)
+            expr_free(E->ternary.vit);
         expr_free(E->ternary.cond);
-        expr_free(E->ternary.vit);
         expr_free(E->ternary.vif);
         break;
     default:
@@ -370,7 +371,10 @@ static int64_t expr_binary_eval(expr_t *E)
 static int64_t expr_ternary_eval(expr_t *E)
 {
     int64_t cond = expr_eval(E->ternary.cond);
-    if (cond != 0) return expr_eval(E->ternary.vit);
+    if (cond != 0) {
+        if (E->ternary.vit == E->ternary.cond) return cond;
+        return expr_eval(E->ternary.vit);
+    }
     return expr_eval(E->ternary.vif);
 }
 
@@ -576,9 +580,7 @@ static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
 
     expr_t *vit = expr_parse_led(p, 0);
     if (vit == NULL) {
-        parser_set_error(p, "missing expression after '?'");
-        expr_free(cond);
-        return NULL;
+        vit = cond;
     } else if (p->lex.tok.kind != tok_ternary_else) {
         parser_set_error(p, "missing ':' in ternary conditional expression");
         expr_free(cond);
@@ -592,7 +594,7 @@ static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
     if (vif == NULL) {
         parser_set_error(p, "missing expression after ':'");
         expr_free(cond);
-        expr_free(vit);
+        if (cond != vit) expr_free(vit);
         return NULL;
     }
 
