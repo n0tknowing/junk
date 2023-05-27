@@ -77,6 +77,10 @@ main:
 Output should be:
 
 ```
-    before calling foo(), esi = 0
-    after calling foo(),  esi = 1
+before calling foo(), esi = 0
+after calling foo(),  esi = 1
 ```
+
+As you can see, before calling `foo()`, `esi` is 0 and inside `foo()`, it
+modifies `esi` to 1, after the function returned, `esi` is modified (clobbered)
+and no longer 0 when it's printed.
