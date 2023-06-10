@@ -33,7 +33,7 @@ typedef enum {
     tok_star, tok_slash, tok_percent, tok_ternary_if, tok_ternary_else,
     tok_bitand, tok_bitxor, tok_bitor, tok_bitnot, tok_logand, tok_logor,
     tok_lognot, tok_lshift, tok_rshift, tok_eq, tok_ne, tok_lt, tok_gt,
-    tok_le, tok_ge,
+    tok_le, tok_ge, tok_comma,
     tok_unknown = 256,
 } token_kind_t;
 
@@ -131,6 +131,9 @@ void lexer_next(lexer_t *l)
         break;
     case '~':
         l->tok.kind = tok_bitnot;
+        break;
+    case ',':
+        l->tok.kind = tok_comma;
         break;
     case '>':
         if (l->cur[1] == '>') {
@@ -362,6 +365,8 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs <= rhs;
     case tok_ge:
         return lhs >= rhs;
+    case tok_comma:
+        return rhs;
     default:
         fprintf(stderr, "invalid binary operator\n");
         exit(1);
@@ -435,6 +440,8 @@ typedef struct {
 static expr_bp bp_lookup(token_kind_t tok)
 {
     switch (tok) {
+    case tok_comma:
+        return bp_left_assoc(5);
     case tok_ternary_if:
         return bp_right_assoc(20);
     case tok_logor:
