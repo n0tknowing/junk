@@ -1,0 +1,7 @@
+#!/usr/bin/bash
+
+FILE="$1"
+OBJFILE="/tmp/${FILE%.*}.o"
+as "$FILE" -o "$OBJFILE"
+objdump -D --disassembler-color=extended "$OBJFILE"
+#rm -f "$OBJFILE"
