@@ -600,8 +600,8 @@ static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
     expr_t *vif = expr_parse_led(p, 0);
     if (vif == NULL) {
         parser_set_error(p, "missing expression after ':'");
-        expr_free(cond);
         if (cond != vit) expr_free(vit);
+        expr_free(cond);
         return NULL;
     }
 
