@@ -241,7 +241,7 @@ int main(void)
                                   expr_binary(T_PERCENT,
                                               expr_number(3),
                                               expr_number(2))));
-    input = "~-1 + 2 * (3 %% 2)";
+    input = "~-1 + 2 * (3 % 2)";
 #else
     // 1 + 2 ? 9 + 10 : -2
     exp = expr_ternary(expr_binary(T_PLUS, expr_number(1), expr_number(2)), // cond
