@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum TokenKind { // <-- This should belong to the lexer
     T_EOF = 0,
@@ -142,30 +143,55 @@ struct IR {
     enum IROpKind op;
     struct IRVar dst;
     struct IRVar arg[2];
+    struct IR *next;
+    struct IR *prev;
 };
 
 struct IRList {
     int n_ir;
-    struct IR *ir;
+    struct IR *head;
+    struct IR *tail;
 };
 
 void irlist_init(struct IRList *irl)
 {
     irl->n_ir = 0;
-    irl->ir = calloc(24, sizeof(struct IR));
-    assert(irl->ir != NULL);
+    irl->head = NULL;
+    irl->tail = NULL;
 }
 
 void irlist_add(struct IRList *irl, struct IR *ir)
 {
-    assert(irl->n_ir < 24);
-    irl->ir[irl->n_ir++] = *ir;
+    struct IR *new_ir;
+
+    new_ir = calloc(1, sizeof(struct IR));
+    assert(new_ir != NULL);
+
+    memcpy(new_ir, ir, sizeof(struct IR));
+    new_ir->next = NULL;
+    new_ir->prev = irl->tail;
+
+    if (irl->n_ir == 0)
+        irl->head = new_ir;
+    else
+        irl->tail->next = new_ir;
+
+    irl->tail = new_ir;
+    irl->n_ir++;
 }
 
 void irlist_free(struct IRList *irl)
 {
-    free(irl->ir);
-    irl->ir = NULL;
+    struct IR *next;
+
+    while (irl->head != NULL) {
+        next = irl->head->next;
+        free(irl->head);
+        irl->head = next;
+    }
+
+    irl->head = NULL;
+    irl->tail = NULL;
     irl->n_ir = 0;
 }
 
@@ -211,10 +237,10 @@ static void expr_gen_binary(struct IRList *irl, struct ASTExpr *exp)
     struct IR ir;
 
     expr_gen(irl, exp->as.binary.lhs);
-    ir.arg[0] = irl->ir[irl->n_ir - 1].dst;
+    ir.arg[0] = irl->tail->dst;
 
     expr_gen(irl, exp->as.binary.rhs);
-    ir.arg[1] = irl->ir[irl->n_ir - 1].dst;
+    ir.arg[1] = irl->tail->dst;
 
     ir.op = binop2irop(exp->as.binary.kind);
     ir.dst.kind = IR_KIND_VAR;
@@ -240,7 +266,7 @@ static void expr_gen_unary(struct IRList *irl, struct ASTExpr *exp)
     struct IR ir;
 
     expr_gen(irl, exp->as.unary.exp);
-    ir.arg[0] = irl->ir[irl->n_ir - 1].dst;
+    ir.arg[0] = irl->tail->dst;
 
     ir.op = unop2irop(exp->as.unary.kind);
     ir.dst.kind = IR_KIND_VAR;
@@ -298,11 +324,12 @@ const char *irop2str(enum IROpKind kind)
 
 void expr_dump_ir(struct IRList *irl, FILE *out)
 {
-    struct IR *ir;
+    struct IR *ir, *next;
     struct IRVar *arg0, *arg1;
 
-    for (int i = 0; i < irl->n_ir; i++) {
-        ir = &irl->ir[i];
+    ir = irl->head;
+    while (ir != NULL) {
+        next = ir->next;
         arg0 = &ir->arg[0];
         arg1 = &ir->arg[1];
         // OP DST
@@ -325,6 +352,7 @@ void expr_dump_ir(struct IRList *irl, FILE *out)
             break;
         }
         fprintf(out, "\n");
+        ir = next;
     }
 }
 
