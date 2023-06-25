@@ -144,12 +144,14 @@ void expr_free(struct ASTExpr *expr)
 enum IRVarKind {
     IR_KIND_IMM,
     IR_KIND_VAR,
+    IR_KIND_LABEL
 };
 
 struct IRVar {
     enum IRVarKind kind;
     union {
         char var[32];
+        char label[32];
         int64_t imm;
     };
 };
@@ -276,7 +278,6 @@ static void expr_gen_binary(struct IRList *irl, struct ASTExpr *exp)
     ir.op = binop2irop(exp->as.binary.kind);
     ir.dst.kind = IR_KIND_VAR;
     snprintf(ir.dst.var, sizeof(ir.dst.var), "_t%d", irl->n_ir);
-
     irlist_add(irl, &ir);
 }
 
@@ -299,10 +300,9 @@ static void expr_gen_unary(struct IRList *irl, struct ASTExpr *exp)
     expr_gen(irl, exp->as.unary.exp);
 
     ir.op = unop2irop(exp->as.unary.kind);
-    ir.dst.kind = IR_KIND_VAR;
     ir.arg[0] = irl->tail->dst;
+    ir.dst.kind = IR_KIND_VAR;
     snprintf(ir.dst.var, sizeof(ir.dst.var), "_t%d", irl->n_ir);
-
     irlist_add(irl, &ir);
 }
 
@@ -320,7 +320,6 @@ static void expr_gen_ternary(struct IRList *irl, struct ASTExpr *exp)
     ir.arg[1].imm = 0;
     ir.dst.kind = IR_KIND_VAR;
     snprintf(ir.dst.var, sizeof(ir.dst.var), "_t%d", irl->n_ir);
-
     irlist_add(irl, &ir);
 
     label_if_true = irl->n_ir + 1;
@@ -329,37 +328,42 @@ static void expr_gen_ternary(struct IRList *irl, struct ASTExpr *exp)
 
     // Gen IFNE pred, label_if_true, label_if_false
     ir.op = IR_OP_IFNE;
-    ir.arg[0].kind = IR_KIND_VAR; // label_if_true
-    snprintf(ir.arg[0].var, sizeof(ir.arg[0].var), ".L%d", label_if_true);
-    ir.arg[1].kind = IR_KIND_VAR; // label_if_false
-    snprintf(ir.arg[1].var, sizeof(ir.arg[1].var), ".L%d", label_if_false);
-    memcpy(ir.dst.var, irl->tail->dst.var, sizeof(ir.dst.var)); // pred
-
+    // pred
+    memcpy(ir.dst.var, irl->tail->dst.var, sizeof(ir.dst.var));
+    // label if true
+    ir.arg[0].kind = IR_KIND_LABEL;
+    snprintf(ir.arg[0].label, sizeof(ir.arg[0].label), ".L%d", label_if_true);
+    // label if false
+    ir.arg[1].kind = IR_KIND_LABEL;
+    snprintf(ir.arg[1].label, sizeof(ir.arg[1].label), ".L%d", label_if_false);
     irlist_add(irl, &ir);
 
     // Gen label_if_true:
     ir.op = IR_OP_LABEL;
-    snprintf(ir.dst.var, sizeof(ir.dst.var), ".L%d:", label_if_true);
+    ir.dst.kind = IR_KIND_LABEL;
+    snprintf(ir.dst.label, sizeof(ir.dst.label), ".L%d", label_if_true);
     irlist_add(irl, &ir);
 
     expr_gen(irl, exp->as.ternary.if_true);
 
     // Gen JMP .label_after_true
     ir.op = IR_OP_JMP;
-    ir.dst.kind = IR_KIND_VAR;
-    snprintf(ir.dst.var, sizeof(ir.dst.var), ".L%d", label_after_true);
+    ir.dst.kind = IR_KIND_LABEL;
+    snprintf(ir.dst.label, sizeof(ir.dst.label), ".L%d", label_after_true);
     irlist_add(irl, &ir);
 
     // Gen label_if_false:
     ir.op = IR_OP_LABEL;
-    snprintf(ir.dst.var, sizeof(ir.dst.var), ".L%d:", label_if_false);
+    ir.dst.kind = IR_KIND_LABEL;
+    snprintf(ir.dst.label, sizeof(ir.dst.label), ".L%d", label_if_false);
     irlist_add(irl, &ir);
 
     expr_gen(irl, exp->as.ternary.if_false);
 
     // Gen label_after_true:
     ir.op = IR_OP_LABEL;
-    snprintf(ir.dst.var, sizeof(ir.dst.var), ".L%d:", label_after_true);
+    ir.dst.kind = IR_KIND_LABEL;
+    snprintf(ir.dst.label, sizeof(ir.dst.label), ".L%d", label_after_true);
     irlist_add(irl, &ir);
 }
 
@@ -432,10 +436,10 @@ void expr_dump_ir(struct IRList *irl, FILE *out)
 
         // OP DST
         if (ir->op == IR_OP_LABEL) {
-            fprintf(out, "%s", ir->dst.var);
+            fprintf(out, "%s:", ir->dst.label);
             goto next_ir;
         } else if (ir->op == IR_OP_JMP) {
-            fprintf(out, "    %s %s", irop2str(ir->op), ir->dst.var);
+            fprintf(out, "    %s %s", irop2str(ir->op), ir->dst.label);
             goto next_ir;
         } else {
             fprintf(out, "    %s %s, ", irop2str(ir->op), ir->dst.var);
@@ -443,6 +447,7 @@ void expr_dump_ir(struct IRList *irl, FILE *out)
 
         // ARG0
         if (arg0->kind == IR_KIND_IMM) fprintf(out, "%ld", arg0->imm);
+        else if (arg0->kind == IR_KIND_LABEL) fprintf(out, "%s", arg0->label);
         else fprintf(out, "%s", arg0->var);
 
         // ARG1
@@ -455,6 +460,7 @@ void expr_dump_ir(struct IRList *irl, FILE *out)
         case IR_OP_CMP:
         case IR_OP_IFNE:
             if (arg1->kind == IR_KIND_IMM) fprintf(out, ", %ld", arg1->imm);
+            else if (arg1->kind == IR_KIND_LABEL) fprintf(out, ", %s", arg1->label);
             else fprintf(out, ", %s", arg1->var);
             break;
         default:
