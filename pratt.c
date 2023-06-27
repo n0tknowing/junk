@@ -179,6 +179,80 @@ void lexer_next(lexer_t *l)
     l->cur += off;
 }
 
+#ifndef USE_SYSALLOC
+// === AST Allocator ======================================
+// ========================================================
+
+struct block {
+    struct block *prev;
+    size_t count;
+    size_t capa;
+    void *data;
+};
+
+struct allocator {
+    struct block *head; /* current block */
+    size_t block_data_size;
+};
+
+static struct block *block_new(size_t capa, size_t size)
+{
+    struct block *block;
+
+    block = calloc(1, sizeof(struct block) + size * capa);
+    assert(block != NULL);
+
+    block->prev = NULL;
+    block->count = 0;
+    block->capa = capa;
+    block->data = (unsigned char *)block + sizeof(struct block);
+    return block;
+}
+
+void allocator_setup(struct allocator *a, size_t capa, size_t size)
+{
+    struct block *block;
+
+    block = block_new(capa, size);
+    a->head = block;
+    a->block_data_size = size;
+}
+
+void allocator_cleanup(struct allocator *a)
+{
+    struct block *head, *prev;
+
+    head = a->head;
+    while (head != NULL) {
+        prev = head->prev;
+        free(head);
+        head = prev;
+    }
+
+    a->block_data_size = 0;
+}
+
+void *allocator_malloc(struct allocator *a)
+{
+    void *ptr;
+    struct block *head, *nhead;
+
+    head = a->head;
+    if (head->count == head->capa) {
+        nhead = block_new(head->capa, a->block_data_size);
+        nhead->prev = head;
+        a->head = nhead;
+        head = nhead;
+    }
+
+    ptr = (unsigned char *)head->data + head->count * a->block_data_size;
+    head->count++;
+    return ptr;
+}
+
+static struct allocator alloc; /* FIXME: definitely not like this */
+#endif /* !USE_SYSALLOC */
+
 // === AST ================================================
 // ========================================================
 
@@ -211,8 +285,12 @@ struct expr_t {
 
 static expr_t *expr_new(expr_kind_t kind)
 {
+#ifndef USE_SYSALLOC
+    expr_t *E = allocator_malloc(&alloc);
+#else
     expr_t *E = calloc(1, sizeof(*E));
     assert(E != NULL);
+#endif
     E->kind = kind;
     return E;
 }
@@ -254,6 +332,9 @@ void expr_free(expr_t *E)
 {
     if (E == NULL) return;
 
+#ifndef USE_SYSALLOC
+    allocator_cleanup(&alloc);
+#else
     switch (E->kind) {
     case literal_kind:
         break;
@@ -275,6 +356,7 @@ void expr_free(expr_t *E)
     }
 
     free(E);
+#endif
 }
 
 // === Eval =================================================
@@ -662,6 +744,10 @@ void interpreter_init(interpreter_t *i, const char *s, size_t n)
     i->input = s;
     i->len = n;
     i->error_msg[0] = 0;
+
+#ifndef USE_SYSALLOC
+    allocator_setup(&alloc, 8, sizeof(expr_t));
+#endif
 }
 
 expr_t *interpret_expr(interpreter_t *i)
