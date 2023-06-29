@@ -186,7 +186,6 @@ void lexer_next(lexer_t *l)
 // ========================================================
 
 struct block {
-    struct block *prev;
     struct block *next;
     uint32_t count, capacity;
     void *data;
@@ -217,10 +216,8 @@ void allocator_setup(struct allocator *a, size_t capa, size_t size)
     struct block *block;
 
     block = block_new(capa, size);
-    a->head = block;
-    a->tail = block;
-    a->curr = block;
     a->data_size = size;
+    a->head = a->tail = a->curr = block;
 }
 
 void allocator_cleanup(struct allocator *a)
@@ -234,10 +231,8 @@ void allocator_cleanup(struct allocator *a)
         head = next;
     }
 
-    a->head = NULL;
-    a->tail = NULL;
-    a->curr = NULL;
     a->data_size = 0;
+    a->head = a->tail = a->curr = NULL;
 }
 
 void allocator_reset(struct allocator *a)
@@ -270,8 +265,7 @@ void *allocator_malloc(struct allocator *a)
         } else {
             nblk = block_new(curr->capacity, a->data_size);
             nblk->next = NULL;
-            nblk->prev = a->tail;
-            a->tail->next = nblk;
+            curr->next = nblk;
             a->tail = nblk;
             a->curr = nblk;
             curr = nblk;
