@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -180,31 +181,33 @@ void lexer_next(lexer_t *l)
 }
 
 #ifndef USE_SYSALLOC
+
 // === AST Allocator ======================================
 // ========================================================
 
 struct block {
     struct block *prev;
-    size_t count;
-    size_t capa;
+    struct block *next;
+    uint32_t count, capacity;
     void *data;
 };
 
 struct allocator {
-    struct block *head; /* current block */
-    size_t block_data_size;
+    struct block *head;
+    struct block *tail;
+    struct block *curr; /* current block in use */
+    size_t data_size;
 };
 
-static struct block *block_new(size_t capa, size_t size)
+static struct block *block_new(size_t capacity, size_t size)
 {
     struct block *block;
 
-    block = calloc(1, sizeof(struct block) + size * capa);
+    block = calloc(1, sizeof(struct block) + size * capacity);
     assert(block != NULL);
 
-    block->prev = NULL;
     block->count = 0;
-    block->capa = capa;
+    block->capacity = (uint32_t)capacity;
     block->data = (unsigned char *)block + sizeof(struct block);
     return block;
 }
@@ -215,42 +218,73 @@ void allocator_setup(struct allocator *a, size_t capa, size_t size)
 
     block = block_new(capa, size);
     a->head = block;
-    a->block_data_size = size;
+    a->tail = block;
+    a->curr = block;
+    a->data_size = size;
 }
 
 void allocator_cleanup(struct allocator *a)
 {
-    struct block *head, *prev;
+    struct block *head, *next;
 
     head = a->head;
     while (head != NULL) {
-        prev = head->prev;
+        next = head->next;
         free(head);
-        head = prev;
+        head = next;
     }
 
-    a->block_data_size = 0;
+    a->head = NULL;
+    a->tail = NULL;
+    a->curr = NULL;
+    a->data_size = 0;
+}
+
+void allocator_reset(struct allocator *a)
+{
+    struct block *head, *next;
+
+    head = a->head;
+    while (head != NULL) {
+        next = head->next;
+        if (head->count > 0) {
+            memset(head->data, 0, head->count * a->data_size);
+            head->count = 0;
+        }
+        head = next;
+    }
+
+    a->curr = a->head;
 }
 
 void *allocator_malloc(struct allocator *a)
 {
     void *ptr;
-    struct block *head, *nhead;
+    struct block *curr, *nblk;
 
-    head = a->head;
-    if (head->count == head->capa) {
-        nhead = block_new(head->capa, a->block_data_size);
-        nhead->prev = head;
-        a->head = nhead;
-        head = nhead;
+    curr = a->curr;
+    if (curr->count == curr->capacity) {
+        if (curr->next != NULL) {
+            a->curr = curr->next;
+            curr = curr->next;
+        } else {
+            nblk = block_new(curr->capacity, a->data_size);
+            nblk->next = NULL;
+            nblk->prev = a->tail;
+            a->tail->next = nblk;
+            a->tail = nblk;
+            a->curr = nblk;
+            curr = nblk;
+        }
     }
 
-    ptr = (unsigned char *)head->data + head->count * a->block_data_size;
-    head->count++;
+    ptr = (unsigned char *)curr->data + curr->count * a->data_size;
+    curr->count++;
     return ptr;
 }
 
 static struct allocator alloc; /* FIXME: definitely not like this */
+
 #endif /* !USE_SYSALLOC */
 
 // === AST ================================================
@@ -333,7 +367,7 @@ void expr_free(expr_t *E)
     if (E == NULL) return;
 
 #ifndef USE_SYSALLOC
-    allocator_cleanup(&alloc);
+    allocator_reset(&alloc);
 #else
     switch (E->kind) {
     case literal_kind:
@@ -744,10 +778,6 @@ void interpreter_init(interpreter_t *i, const char *s, size_t n)
     i->input = s;
     i->len = n;
     i->error_msg[0] = 0;
-
-#ifndef USE_SYSALLOC
-    allocator_setup(&alloc, 8, sizeof(expr_t));
-#endif
 }
 
 expr_t *interpret_expr(interpreter_t *i)
@@ -842,6 +872,9 @@ static void repl(void)
 
 int main(int argc, char **argv)
 {
+#ifndef USE_SYSALLOC
+    allocator_setup(&alloc, 8, sizeof(expr_t));
+#endif
     if (argc > 1) {
         interpreter_t ctx;
         interpreter_init(&ctx, argv[1], strlen(argv[1]));
@@ -858,4 +891,7 @@ int main(int argc, char **argv)
     } else {
         repl();
     }
+#ifndef USE_SYSALLOC
+    allocator_cleanup(&alloc);
+#endif
 }
