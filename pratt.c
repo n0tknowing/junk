@@ -515,6 +515,7 @@ int64_t expr_eval(expr_t *E)
 // ==========================================================
 
 typedef struct {
+    int min_bp;
     lexer_t lex;
     char error_msg[256];
 } parser_t;
@@ -594,7 +595,7 @@ static expr_t *expr_parse_subexpr(parser_t *p)
 {
     lexer_next(&p->lex);
 
-    expr_t *E = expr_parse_led(p, 0);
+    expr_t *E = expr_parse_led(p, p->min_bp);
 
     if (E == NULL) {
         parser_set_error(p, "missing expression after '('");
@@ -695,7 +696,7 @@ static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
         return NULL;
     }
 
-    expr_t *vit = expr_parse_led(p, 0);
+    expr_t *vit = expr_parse_led(p, p->min_bp);
     if (vit == NULL) {
         vit = cond;
     } else if (p->lex.tok.kind != tok_ternary_else) {
@@ -707,7 +708,7 @@ static expr_t *expr_parse_ternary(parser_t *p, expr_t *cond)
 
     lexer_next(&p->lex);
 
-    expr_t *vif = expr_parse_led(p, 0);
+    expr_t *vif = expr_parse_led(p, p->min_bp);
     if (vif == NULL) {
         parser_set_error(p, "missing expression after ':'");
         if (cond != vit) expr_free(vit);
@@ -781,7 +782,7 @@ expr_t *interpret_expr(interpreter_t *i)
 
     lexer_next(&p.lex);
 
-    expr_t *E = expr_parse_led(&p, 0);
+    expr_t *E = expr_parse_led(&p, p.min_bp = 0);
     if (E == NULL) {
         size_t err_len = strlen(p.error_msg);
         if (err_len == 0) {
