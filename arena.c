@@ -21,12 +21,14 @@ static struct block *block_new(size_t capacity, size_t size)
 {
     struct block *block;
 
-    block = calloc(1, sizeof(struct block) + size * capacity);
+    block = calloc(1, sizeof(struct block));
     assert(block != NULL);
 
     block->count = 0;
     block->capacity = (uint32_t)capacity;
-    block->data = (unsigned char *)block + sizeof(struct block);
+    block->data = calloc(capacity, size);
+    assert(block->data != NULL);
+
     return block;
 }
 
@@ -46,6 +48,7 @@ void allocator_cleanup(struct allocator *a)
     head = a->head;
     while (head != NULL) {
         next = head->next;
+        free(head->data);
         free(head);
         head = next;
     }
