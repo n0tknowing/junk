@@ -413,9 +413,16 @@ static int64_t expr_unary_eval(expr_t *E)
 
 static int64_t expr_binary_eval(expr_t *E)
 {
-    int64_t lhs = expr_eval(E->binary.lhs);
-    int64_t rhs = expr_eval(E->binary.rhs);
+    int64_t lhs, rhs;
+    lhs = expr_eval(E->binary.lhs);
 
+    if (E->binary.operator == tok_logand || E->binary.operator == tok_logor) {
+        if (lhs != (E->binary.operator == tok_logand))
+            return !!lhs;
+        return !!expr_eval(E->binary.rhs);
+    }
+
+    rhs = expr_eval(E->binary.rhs);
     switch (E->binary.operator) {
     case tok_plus:
         return lhs + rhs;
@@ -441,9 +448,6 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs ^ rhs;
     case tok_bitor:
         return lhs | rhs;
-    case tok_logand:
-        return lhs && rhs;
-    case tok_logor:
         return lhs || rhs;
     case tok_lshift:
         if (lhs < 0 || rhs < 0) {
