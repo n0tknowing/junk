@@ -55,7 +55,7 @@ string_ref string_pool::add(const char *p)
 
 string_ref string_pool::add(const std::string &s)
 {
-    return add(s.data(), static_cast<size_t>(s.size()));
+    return add(s.data(), static_cast<uint32_t>(s.size()));
 }
 
 string_ref string_pool::concat(string_ref ref1, string_ref ref2)
@@ -68,7 +68,7 @@ string_ref string_pool::concat(string_ref ref1, string_ref ref2)
         m_temp.reserve(size);
 
     m_temp.append(data_of(ref1), size1);
-    m_temp.append(data_of(ref2), size);
+    m_temp.append(data_of(ref2), size2);
 
     string_ref ref = add(m_temp);
     m_temp.clear();
