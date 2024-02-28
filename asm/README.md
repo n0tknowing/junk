@@ -1,4 +1,4 @@
-### x86 General Purpose Registers on linux
+## x86 General Purpose Registers on linux
 
 | 64-bit | 32-bit | 16-bit | 8-bit | notes                       |
 |--------|--------|--------|-------|-----------------------------|
@@ -19,14 +19,14 @@
 | r14    | r14d   | r14w   | r14b  | callee-saved                |
 | r15    | r15d   | r15w   | r15b  | callee-saved                |
 
-### Instruction suffixes (AT&T syntax)
+## Instruction suffixes (AT&T syntax)
 
 - b = byte
 - w = word
 - l = doubleword
 - q = quadword
 
-### Intel syntax with GAS
+## Intel syntax with GAS
 
 ```asm
     .intel_syntax noprefix
@@ -34,12 +34,12 @@
     your code here
 ```
 
-### General questions and answers
+## General questions and answers
 
-#### What is Caller-saved and Callee-saved?
+### What is Caller-saved and Callee-saved?
 
 Caller-saved means that a register may be overwritten after calling
-a function.  On the other hand, Callee-saved means a register will
+a function.  On the other hand, Callee-saved means a register should
 not be overwritten. Another terms for these are call-clobbered and
 call-preserved.
 
@@ -84,3 +84,7 @@ after calling foo(),  esi = 1
 As you can see, before calling `foo()`, `esi` is 0 and inside `foo()`, it
 modifies `esi` to 1, after the function returned, `esi` is modified (clobbered)
 and no longer 0 when it's printed.
+
+#### Reading
+
+- [Stack Overflow - What are callee and caller saved registers?](https://stackoverflow.com/a/16265609/14092669)
