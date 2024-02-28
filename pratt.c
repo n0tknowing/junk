@@ -448,7 +448,6 @@ static int64_t expr_binary_eval(expr_t *E)
         return lhs ^ rhs;
     case tok_bitor:
         return lhs | rhs;
-        return lhs || rhs;
     case tok_lshift:
         if (lhs < 0 || rhs < 0) {
             fprintf(stderr, "bitwise shifts only work on non-negative "
