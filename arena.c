@@ -12,7 +12,6 @@ struct block {
 
 struct allocator {
     struct block *head;
-    struct block *tail;
     struct block *curr; /* current block in use */
     size_t data_size;
 };
@@ -38,7 +37,7 @@ void allocator_setup(struct allocator *a, size_t capa, size_t size)
 
     block = block_new(capa, size);
     a->data_size = size;
-    a->head = a->tail = a->curr = block;
+    a->head = a->curr = block;
 }
 
 void allocator_cleanup(struct allocator *a)
@@ -54,7 +53,7 @@ void allocator_cleanup(struct allocator *a)
     }
 
     a->data_size = 0;
-    a->head = a->tail = a->curr = NULL;
+    a->head = a->curr = NULL;
 }
 
 void allocator_reset(struct allocator *a)
@@ -88,7 +87,6 @@ void *allocator_malloc(struct allocator *a)
             nblk = block_new(curr->capacity, a->data_size);
             nblk->next = NULL;
             curr->next = nblk;
-            a->tail = nblk;
             a->curr = nblk;
             curr = nblk;
         }
