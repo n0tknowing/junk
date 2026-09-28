@@ -10,7 +10,8 @@
 #include <sys/mman.h>
 #include <time.h>
 
-#define ALIGN(x, y)			(((x) + ((y) - 1)) & (~((y) - 1)))
+#define ALIGN(x, y)	(((x) + ((y) - 1)) & (~((y) - 1)))
+#define IS_POW2(x)	(((x) & ((x) - 1)) == 0)
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -20,27 +21,33 @@ struct allocator_freelist {
 
 struct allocator_blob {
 	struct allocator_blob *next;
-	size_t used, capacity;
-	unsigned char *data;
+	size_t used;
 };
 
 struct allocator {
 	struct allocator_blob *blob;
 	struct allocator_freelist *freelist;
-	size_t elem_size, blob_data_offset, next_blob_capacity;
+	size_t elem_size, blob_data_offset, blob_capacity;
 };
+
+static unsigned char *blob_data(const struct allocator *alc,
+								struct allocator_blob *blob)
+{
+	return (unsigned char *)blob + alc->blob_data_offset;
+}
 
 static void allocator_setup(struct allocator *alc,
 							size_t elem_size,
 							size_t elem_align,
-							size_t init_capacity)
+							size_t min_capacity)
 {
-	assert(elem_align != 0 && (elem_align & (elem_align - 1)) == 0);
+	assert(elem_align >= alignof(struct allocator_freelist) && IS_POW2(elem_align));
 	assert(elem_size >= sizeof(struct allocator_freelist));
+	assert(min_capacity != 0);
 
 	alc->elem_size = ALIGN(elem_size, elem_align);
 	alc->blob_data_offset = ALIGN(sizeof(struct allocator_blob), elem_align);
-	alc->next_blob_capacity = init_capacity;
+	alc->blob_capacity = min_capacity;
 	alc->blob = NULL;
 	alc->freelist = NULL;
 }
@@ -51,12 +58,12 @@ static void allocator_cleanup(struct allocator *alc)
 
 	while (blob) {
 		struct allocator_blob *next = blob->next;
-		munmap(blob, alc->blob_data_offset + (blob->capacity * alc->elem_size));
+		munmap(blob, alc->blob_data_offset + (alc->blob_capacity * alc->elem_size));
 		blob = next;
 	}
 
 	alc->elem_size = 0;
-	alc->next_blob_capacity = 0;
+	alc->blob_capacity = 0;
 	alc->blob = NULL;
 	alc->freelist = NULL;
 }
@@ -70,20 +77,21 @@ static void *allocator_alloc(struct allocator *alc)
 	}
 
 	struct allocator_blob *blob = alc->blob;
-	if (blob == NULL || blob->used == blob->capacity) {
-		size_t size = alc->blob_data_offset + (alc->next_blob_capacity * alc->elem_size);
-		blob = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (blob == NULL || blob->used == alc->blob_capacity) {
+		blob = mmap(NULL,
+					alc->blob_data_offset + (alc->blob_capacity * alc->elem_size),
+					PROT_READ | PROT_WRITE,
+					MAP_PRIVATE | MAP_ANONYMOUS,
+					-1,
+					0);
 		if (blob == MAP_FAILED)
 			return NULL;
 		blob->used = 0;
-		blob->capacity = alc->next_blob_capacity;
 		blob->next = alc->blob;
-		blob->data = (unsigned char *)blob + alc->blob_data_offset;
 		alc->blob = blob;
-		alc->next_blob_capacity += alc->next_blob_capacity / 2;
 	}
 
-	void *p = blob->data + (blob->used * alc->elem_size);
+	void *p = blob_data(alc, blob) + (blob->used * alc->elem_size);
 	blob->used++;
 	return p;
 }
@@ -122,7 +130,7 @@ static void arena_reset(struct arena *arn)
 
 static void *arena_alloc(struct arena *arn, size_t size, size_t align)
 {
-	assert(align != 0 && (align & (align - 1)) == 0);
+	assert(align != 0 && IS_POW2(align));
 
 	size_t off = ALIGN(arn->used, align);
 	if (off > arn->capacity || size > arn->capacity - off) return NULL;
@@ -194,7 +202,7 @@ int main(void)
 
 		arena_mark mark = arena_save(&byte_arn);
 		struct foo *test3 = arena_alloc(&byte_arn, sizeof(*test3), alignof(*test3));
-		assert(((uintptr_t)test3 % alignof(*test3)) == 0);
+		assert(((uintptr_t)test3 % alignof(struct foo)) == 0);
 		printf("%zu\n", byte_arn.used);
 		arena_restore(&byte_arn, mark);
 		printf("%zu\n", byte_arn.used);
